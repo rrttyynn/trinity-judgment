@@ -9,46 +9,48 @@
 <body>
 
     <aside class="tutorial-panel">
-        <h2>操作手册 v3.1</h2>
+        <h2>操作手册 v4.1 (最终版)</h2>
         
         <div class="rule-section">
-            <h3>1. 核心流程</h3>
+            <h3>1. 核心流程与规则</h3>
             <ul>
-                <li><b>抢牌:</b> 7张公共牌，双方轮流抓取，各持3张。</li>
-                <li><b>审判:</b> 第7张未被选中的牌决定本局规则。</li>
-                <li><b>布阵:</b> 将手牌分配至 [天] [地] [人] 三路。</li>
+                <li><b>抢牌:</b> 7张公共牌，双方轮流拿 3 张。</li>
+                <li><b>轮换:</b> 每回合先手权轮换。</li>
+                <li><b>获胜:</b> 必须赢下 <b>2 路或 3 路</b>。</li>
             </ul>
         </div>
 
         <div class="rule-section">
-            <h3>2. 胜负规则</h3>
-            <p><b>奇数审判 (1, 3, 5...):</b><br>天(比大) / 地(比小) / 人(比大)</p>
-            <p><b>偶数审判 (2, 4, 6...):</b><br>天(比小) / 地(比大) / 人(比小)</p>
+            <h3>2. 审判与数值</h3>
+            <p><b>奇数审判 (阳):</b> 天(大) / 地(小) / 人(大)</p>
+            <p><b>偶数审判 (阴):</b> 天(小) / 地(大) / 人(小)</p>
             <ul>
-                <li><b>获胜:</b> 赢下 2 路或 3 路。</li>
-                <li><b>三相碾压:</b> 赢下全部 3 路 (3-0)，<b>最终伤害 x2</b>。</li>
-            </ul>
-        </div>
-
-        <div class="rule-section">
-            <h3>3. 特殊数值 (A)</h3>
-            <ul>
-                <li><b>作为手牌:</b> <br>在“比大”路算 <b>14</b> (MAX)<br>在“比小”路算 <b>1</b> (MIN)</li>
-                <li><b>作为审判牌:</b> 风险倍率锁定为 <b>14倍</b>。</li>
-            </ul>
-        </div>
-
-        <div class="rule-section">
-            <h3>4. 伤害与死缓</h3>
-            <p class="formula">伤害 = |分差| × 审判倍率</p>
-            <ul>
-                <li><b>赢家:</b> 清空自己当前的死缓池。</li>
-                <li><b>输家:</b> 伤害累积进入死缓池。</li>
-                <li><span class="warning">警告:</span> 若死缓池 > 100，立即爆仓处决。</li>
+                <li><b>量子王牌 (A):</b> 在比大路算 <b>14</b> (MAX)，比小路算 <b>1</b> (MIN)。</li>
+                <li><b>审判倍率:</b> 审判牌点数即为倍率 (A=14倍)。</li>
             </ul>
         </div>
         
-        <div class="credit">SYSTEM READY</div>
+        <div class="rule-section">
+            <h3>3. 风险与奖励</h3>
+            <p class="formula">伤害 = |分差| × 审判倍率 × 环境热度</p>
+            <ul>
+                <li><b>热度 (Heat):</b> 随回合数递增 (R1-3=x1, R4-6=x2...)。</li>
+                <li><b>平局 (DRAW):</b> 伤害存入 **死斗奖池 (Jackpot)**，下回合赢家拿走。</li>
+                <li><b>完胜 (3-0):</b> 最终伤害<b>翻倍 (x2)</b>。</li>
+            </ul>
+        </div>
+
+        <div class="rule-section">
+            <h3>4. 死缓机制 (DEBT)</h3>
+            <ul>
+                <li><b>认罪 (Pay):</b> 立即支付债务的 50% 作为 HP 损失。</li>
+                <li><b>加注 (Double):</b> 输了则本局伤害 x1.5 存入死缓池。</li>
+                <li><b>极限加注:</b> 若死缓 > 100，仍选加注：<br>↳ 输则 **1.5倍伤害直接扣除 HP**，债务清零。</li>
+            </ul>
+            <p class="warning">警告: 生命值 ≤ 0 游戏结束。</p>
+        </div>
+        
+        <div class="credit">SYSTEM ONLINE / FINAL BUILD</div>
     </aside>
 
     <main class="game-stage">
@@ -70,6 +72,17 @@
 
         <div class="battlefield">
             
+            <div class="env-strip">
+                <div class="env-box">
+                    <span class="label">ENV HEAT</span>
+                    <span class="val danger" id="env-heat">Lv.1</span>
+                </div>
+                <div class="env-box">
+                    <span class="label">JACKPOT</span>
+                    <span class="val gold" id="env-jackpot">0</span>
+                </div>
+            </div>
+
             <div class="hand-zone opponent" id="ai-hand-zone"></div>
 
             <div class="center-deck">
@@ -145,8 +158,8 @@
             <div class="actions-panel" id="action-panel">
                 <button class="btn primary" id="btn-start" onclick="startGame()">开始游戏</button>
                 <div id="debt-actions" class="hidden">
-                    <button class="btn warning" onclick="payDebt()">💸 认罪 (-50% HP)</button>
-                    <button class="btn danger" onclick="doubleDown()">⚔️ 加注 (风险 x1.5)</button>
+                    <button class="btn warning" onclick="payDebt()">💸 认罪 (PAY)</button>
+                    <button class="btn danger" onclick="doubleDown()">⚔️ 加注 (RISK)</button>
                 </div>
             </div>
         </div>

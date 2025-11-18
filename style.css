@@ -173,3 +173,54 @@ body {
     animation: popIn 0.3s ease-out; pointer-events: none;
 }
 @keyframes popIn { from { transform: translate(-50%, -40%) scale(0.8); opacity: 0; } }
+
+/* === 新增：环境热度条 === */
+.env-strip {
+    display: flex; gap: 20px; margin-bottom: 10px;
+    background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 20px;
+    border: 1px solid #444;
+}
+.env-box { display: flex; flex-direction: column; align-items: center; min-width: 60px; }
+.env-box .label { font-size: 0.6rem; color: #888; letter-spacing: 1px; }
+.env-box .val { font-size: 1.2rem; font-weight: bold; font-family: 'Courier New', monospace; }
+
+/* 仪表盘微调 */
+.dashboard-panel { z-index: 20; min-width: 240px; }
+
+/* 在 style.css 末尾添加以下内容 */
+
+/* === 核心：卡牌翻转动画 === */
+.card {
+    /* 保持原样式不变 */
+    /* ... */
+    transform-style: preserve-3d;
+    transition: transform 0.4s ease-out, box-shadow 0.2s;
+    backface-visibility: hidden;
+}
+
+/* 翻转动画 */
+.card.flip {
+    transform: rotateY(180deg);
+}
+
+/* === 核心：屏幕受击反馈 === */
+body.screen-shake {
+    animation: shake 0.2s 3; /* 快速晃动3次 */
+}
+@keyframes shake {
+    0% { transform: translate(1px, 1px) rotate(0deg); }
+    10% { transform: translate(-1px, -2px) rotate(-1deg); }
+    20% { transform: translate(-3px, 0px) rotate(1deg); }
+    30% { transform: translate(3px, 2px) rotate(0deg); }
+    40% { transform: translate(1px, -1px) rotate(1deg); }
+    50% { transform: translate(-1px, 2px) rotate(-1deg); }
+    60% { transform: translate(-3px, 1px) rotate(0deg); }
+    70% { transform: translate(3px, 1px) rotate(-1deg); }
+    80% { transform: translate(-1px, -1px) rotate(1deg); }
+    90% { transform: translate(1px, 2px) rotate(0deg); }
+    100% { transform: translate(1px, -2px) rotate(-1deg); }
+}
+
+/* HP 闪烁反馈 */
+.hp-bar-container.damage-flash #ai-hp-bar { background: white; box-shadow: 0 0 20px white; }
+.hp-bar-container.damage-flash #player-hp-bar { background: white; box-shadow: 0 0 20px white; }
