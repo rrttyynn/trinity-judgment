@@ -100,6 +100,7 @@ async function startRound() {
     if (State.aiDebt > 0) {
         await UI.sleep(500);
         const action = AI.getDebtAction(State.aiHP, State.aiDebt, State.heat); 
+
         await UI.showAIDecision(action); 
         if (action === 'PAY') {
             const cost = Math.floor(State.aiDebt * 0.3);
@@ -209,11 +210,8 @@ async function endDraftPhase() {
 
 async function proceedToDeploy() {
     State.phase = 'DEPLOY';
-    // 修复：AI 状态设为“准备布阵”，牌位留空
     UI.setAIStatus('AI 准备布阵...');
     updateRealTimeDashboard(); 
-    
-    // 渲染玩家手牌，并使其可点击部署
     const pZone = document.getElementById('player-hand-zone');
     pZone.innerHTML = ''; 
     State.pHand.forEach(value => {
@@ -251,22 +249,30 @@ async function checkDeployFull() {
     if (slots[0] && slots[1] && slots[2]) {
         updateRealTimeDashboard("CALCULATING..."); 
         await UI.sleep(500);
-        resolveBattle(slots); // 玩家放完牌，立刻进入结算，AI 布阵就在这里揭晓
+        resolveBattle(slots); 
     }
 }
 
 async function resolveBattle(pArrangement) {
     UI.setAIStatus('决斗开始！');
     
-    // 1. 获取 AI 的最优和次优布阵 (ai.js 中的逻辑)
+    // 1. 【核心】AI 部署逻辑：计算最优和次优布阵
     const pArr_Likely = AI.optimizeHand(State.pHand, State.rule);
     const [bestArr, secondBestArr] = AI.getDeploymentExploit(State.aiHand, pArr_Likely, State.rule);
     
-    // 2. 战略欺骗：15% 几率选择次优解
+    // 2. 作弊判定 (AI Cheating Logic)
+    let isCheating = (State.aiHP < 50 && State.heat >= 2) && Math.random() < 0.3; // 30%几率作弊
+    let pArrForAI = isCheating ? pArrangement : pArr_Likely; // AI 最终用于计算的玩家布阵
+
+    if (isCheating) {
+         await UI.notify('❗ AI 启用全知模式 ❗', 2500, 'red');
+    }
+    
+    // 3. 战略欺骗：15% 几率选择次优解进行迷惑
     const isBluffing = Math.random() < 0.15;
     const aiArrangement = isBluffing ? secondBestArr : bestArr; 
     
-    // 3. 渲染 AI 槽位 (此处才真正揭晓 AI 的布阵)
+    // 渲染 AI 槽位 (此处才真正揭晓 AI 的布阵)
     for (let i = 0; i < 3; i++) {
         const lane = document.getElementById(`lane-${i}`);
         const aiSlot = lane.querySelector('.ai-slot');
@@ -305,7 +311,7 @@ async function resolveBattle(pArrangement) {
         indicator.style.color = 'white';
         await UI.sleep(1500); 
 
-        // 累计胜场 & 提示
+        // 统计胜场 & 提示
         if (winner === 'PLAYER') {
             pWins++;
             lane.style.borderColor = '#00f3ff';
