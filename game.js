@@ -260,8 +260,7 @@ async function checkDeployFull() {
 async function resolveBattle(pArrangement) {
     UI.setAIStatus('决斗开始！');
     
-    // 1. AI 部署
-    const pArr_Likely = AI.optimizeHand(State.pHand, State.rule); 
+    // 1. AI 部署 (全知反制)
     const [bestArr, secondBestArr] = AI.getDeploymentExploit(State.aiHand, pArrangement, State.rule);
     
     const isBluffing = Math.random() < 0.15;
@@ -283,9 +282,9 @@ async function resolveBattle(pArrangement) {
     const multiplier = Core.getJudgeMultiplier(State.judgeCard);
 
     // 1. 获取总点数，用于伤害计算
+    const damageDifference = Core.calculateDamageDifference(pArrangement, aiArrangement, State.rule);
     const pTotal = Core.calculateMixedSum([], pArrangement, State.rule);
     const aTotal = Core.calculateMixedSum([], aiArrangement, State.rule);
-    const damageDifference = Math.abs(pTotal - aTotal); 
     
     // 2. 逐路判定 (演出)
     for (let i = 0; i < 3; i++) {
@@ -336,13 +335,13 @@ async function resolveBattle(pArrangement) {
         }
         
         // 4. 更新总分 (实时)
-        UI.updateDashboard(pTotal, aTotal, multiplier + "x" + State.heat, damageDifference + State.jackpot);
+        UI.updateDashboard(pTotal, aTotal, multiplier + "x" + State.heat, damageDifference + multiplier * State.heat + State.jackpot);
         await UI.sleep(500); 
     }
 
     // 3. 最终结算
-    const baseDamageRaw = damageDifference * multiplier; // Raw damage base (used for jackpot)
-    let baseDamageWithHeat = baseDamageRaw * State.heat;
+    // 伤害公式：|分差| + (倍率 * 热度)
+    let baseDamageWithHeat = damageDifference + (multiplier * State.heat); 
 
     let isDraw = false;
     let winner = null;

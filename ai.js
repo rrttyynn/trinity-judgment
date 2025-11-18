@@ -15,48 +15,79 @@ export function getBestDraft(pool, aiHand, pHand, jackpot, heat) {
 // 核心 Minimax
 function minimax(pool, aiHand, pHand, isAiTurn, alpha, beta, jackpot, heat) {
     if (pool.length === 1) {
-        return { score: evaluateFinalState(pool[0], aiHand, pHand), card: null };
+        // 终局状态估值 (Minimax叶节点)
+        let score = evaluateFinalState(pool[0], aiHand, pHand);
+
+        // 如果留下的 Judge Card 具有高倍率，为 AI 增加分数，鼓励规则控制
+        const multiplier = Core.getJudgeMultiplier(pool[0]);
+        if (multiplier >= 12) { score += multiplier * 2; } 
+        else if (multiplier <= 3) { score -= 5; }
+
+        return { score: score, card: null };
     }
-    let bestMove = null;
+    
+    // 【核心修复】：动态计算牌池中的最大值和最小值
+    const poolMin = Math.min(...pool);
+    const poolMax = Math.max(...pool);
+
     if (isAiTurn) {
         let maxEval = -Infinity;
+        let bestMove = null;
         for (let card of pool) {
+            let cardBonus = 0;
+            // 【绝对牌权奖励】：争夺当前牌池中的最高/最低牌
+            if (card === poolMax || card === poolMin) {
+                cardBonus = 20; // 巨额奖励，使其成为主要目标
+            }
+            
             const evalObj = minimax(pool.filter(c => c !== card), [...aiHand, card], pHand, false, alpha, beta, jackpot, heat);
-            if (evalObj.score > maxEval) { maxEval = evalObj.score; bestMove = card; }
-            alpha = Math.max(alpha, evalObj.score);
+            
+            const finalScore = evalObj.score + cardBonus; 
+
+            if (finalScore > maxEval) { maxEval = finalScore; bestMove = card; }
+            alpha = Math.max(alpha, finalScore);
             if (beta <= alpha) break; 
         }
         return { score: maxEval, card: bestMove };
     } else {
         let minEval = Infinity;
+        let bestMove = null;
         for (let card of pool) {
+            let cardPenalty = 0;
+            // 【绝对牌权惩罚】：让玩家抢走最高/最低牌
+            if (card === poolMax || card === poolMin) {
+                cardPenalty = -20; // 巨额惩罚
+            }
+
             const evalObj = minimax(pool.filter(c => c !== card), aiHand, [...pHand, card], true, alpha, beta, jackpot, heat);
-            if (evalObj.score < minEval) { minEval = evalObj.score; bestMove = card; }
-            beta = Math.min(beta, evalObj.score);
+            
+            const finalScore = evalObj.score + cardPenalty;
+
+            if (finalScore < minEval) { minEval = finalScore; bestMove = card; }
+            beta = Math.min(beta, finalScore);
             if (beta <= alpha) break;
         }
         return { score: minEval, card: bestMove };
     }
 }
 
-// 终局估值函数 (核心：AI目标为伤害最大化)
+// 终局估值函数 (伤害公式计算)
 function evaluateFinalState(judgeCard, aiHand, pHand) {
     const rule = Core.getJudgeRule(judgeCard);
     
-    // 假设玩家布阵：贪婪启发式
+    // 假设玩家布阵：贪婪启发式 (AI部署的基础预测)
     const pArr_Likely = optimizeHand(pHand, rule); 
     
-    // AI 布阵：使用最强的攻击性策略对抗玩家的预测
+    // AI 布阵：全知攻击性策略
     const [aiArr, ] = getDeploymentExploit(aiHand, pArr_Likely, rule); 
     
-    // 基础伤害计算 (SUM Difference)
+    // 1. 基础伤害计算 (SUM Difference)
     const baseDamageDiff = Core.calculateDamageDifference(pArr_Likely, aiArr, rule);
     const multiplier = Core.getJudgeMultiplier(judgeCard);
     
-    // 【新公式】
-    let rawDamage = baseDamageDiff + multiplier; // 简化为：分差 + 倍率 (Jackpot/Heat在game.js中添加)
+    let rawDamage = baseDamageDiff + multiplier; 
 
-    // 判定胜负 (路数)
+    // 2. 判定胜负 (路数)
     let pWins = 0; let aWins = 0;
     const modes = Core.getLaneModes(rule);
     for (let i = 0; i < 3; i++) {
@@ -67,7 +98,7 @@ function evaluateFinalState(judgeCard, aiHand, pHand) {
     let isDraw = false; let winner = null;
     if (pWins >= 2) winner = 'PLAYER'; else if (aWins >= 2) winner = 'AI'; else isDraw = true;
 
-    // 考虑完胜暴击
+    // 完胜暴击
     if ((winner === 'PLAYER' && pWins === 3) || (winner === 'AI' && aWins === 3)) rawDamage *= 2;
 
     // Minimax 目标：最大化 AI 的净伤害
@@ -77,7 +108,7 @@ function evaluateFinalState(judgeCard, aiHand, pHand) {
 }
 
 
-// 基础最优布阵 (修复愚蠢行为)
+// 基础最优布阵 (HIGH/LOW 绝对值优化)
 export function optimizeHand(hand, rule) {
     if (hand.length < 3) return hand;
 
@@ -94,10 +125,8 @@ export function optimizeHand(hand, rule) {
             
             // 评分逻辑：确保大小牌放对位置
             if (modes[i] === 'HIGH') {
-                // HIGH模式：分数等于有效点数
                 currentScore += Core.getCardPoint(cardValue, 'HIGH'); 
             } else { 
-                // LOW模式：分数通过 (15 - 有效点数) 转换
                 currentScore += (15 - Core.getCardPoint(cardValue, 'LOW')); 
             }
         }
