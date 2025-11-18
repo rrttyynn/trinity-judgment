@@ -11,6 +11,7 @@ export function getBestDraft(pool, aiHand, pHand, jackpot, heat) {
     return result.card || pool[0];
 }
 
+// Minimax 递归搜索 (框架不变)
 function minimax(pool, aiHand, pHand, isAiTurn, alpha, beta, jackpot, heat) {
     if (pool.length === 1) {
         return { score: evaluateFinalState(pool[0], aiHand, pHand), card: null };
@@ -37,22 +38,19 @@ function minimax(pool, aiHand, pHand, isAiTurn, alpha, beta, jackpot, heat) {
     }
 }
 
-// 终局估值函数 (Minimax 评估)
+// 终局估值函数
 function evaluateFinalState(judgeCard, aiHand, pHand) {
     const rule = Core.getJudgeRule(judgeCard);
     
-    // AI 部署：使用最强的攻击性策略
+    // 假设玩家布阵：贪婪启发式 (AI预测玩家会出最优)
     const pArr_Likely = optimizeHand(pHand, rule); 
-    const aiArr = getDeploymentExploit(aiHand, pArr_Likely, rule)[0]; 
     
-    // 基础伤害计算
-    const pTotal = Core.calculateMixedSum([], pArr_Likely, rule);
-    const aTotal = Core.calculateMixedSum([], aiArr, rule);
-    let rawDamage = Math.abs(pTotal - aTotal); 
-    
-    // 判定胜负 (路数)
+    // AI 布阵：使用最强的攻击性策略对抗玩家的预测
+    const [aiArr, ] = getDeploymentExploit(aiHand, pArr_Likely, rule); // 取最优布阵
+
     let pWins = 0; let aWins = 0;
     const modes = Core.getLaneModes(rule);
+
     for (let i = 0; i < 3; i++) {
         const winner = Core.compareLane(pArr_Likely[i], aiArr[i], modes[i]);
         if (winner === 'PLAYER') pWins++; else if (winner === 'AI') aWins++;
@@ -60,18 +58,21 @@ function evaluateFinalState(judgeCard, aiHand, pHand) {
     
     let winner = null;
     if (pWins >= 2) winner = 'PLAYER'; else if (aWins >= 2) winner = 'AI';
-
-    // 终局倍率和伤害
+    
+    // 计算终局评分 (Minimax 目标)
+    const pTotal = Core.calculateMixedSum([], pArr_Likely, rule);
+    const aTotal = Core.calculateMixedSum([], aiArr, rule);
+    let rawDamage = Math.abs(pTotal - aTotal); 
+    
     if ((winner === 'PLAYER' && pWins === 3) || (winner === 'AI' && aWins === 3)) rawDamage *= 2;
     
-    // Minimax 目标：最大化 AI 的净伤害
     if (winner === 'AI') return rawDamage; 
     else if (winner === 'PLAYER') return -rawDamage; 
     return 0;
 }
 
 
-// 基础最优布阵 (用于预测玩家 / 消除智障行为)
+// 基础最优布阵 (用于预测玩家)
 export function optimizeHand(hand, rule) {
     if (hand.length < 3) return hand;
 
@@ -83,28 +84,17 @@ export function optimizeHand(hand, rule) {
     for (let perm of perms) {
         let currentScore = 0;
         for (let i = 0; i < 3; i++) {
-            const cardValue = perm[i];
-            const mode = modes[i];
-            
-            // 评分逻辑：明确根据模式目标赋值，确保大牌进 HIGH，小牌进 LOW
-            if (mode === 'HIGH') {
-                // HIGH 模式：Ace=14, K=13. 分数等于有效点数。
-                currentScore += Core.getCardPoint(cardValue, 'HIGH'); 
-            } else { 
-                // LOW 模式：Ace=1, 2=2. 分数通过 (15 - 有效点数) 转换，确保小点数获得高分。
-                currentScore += (15 - Core.getCardPoint(cardValue, 'LOW')); 
-            }
+            const val = Core.getCardPoint(perm[i], modes[i]);
+            if (modes[i] === 'HIGH') currentScore += val; 
+            else currentScore += (15 - val);
         }
-        if (currentScore > bestScore) { 
-            bestScore = currentScore; 
-            bestPerm = perm; 
-        }
+        if (currentScore > bestScore) { bestScore = currentScore; bestPerm = perm; }
     }
     return bestPerm;
 }
 
-// 攻击性部署 (返回最优和次优)
-export function getDeploymentExploit(aiHand, pArr_Likely, rule) {
+// 【核心】攻击性部署 (AI实际执行的部署策略)
+export function getDeploymentExploit(aiHand, pArrForAI, rule) {
     const aiPerms = getAllPermutations(aiHand);
     const modes = Core.getLaneModes(rule);
 
@@ -112,21 +102,24 @@ export function getDeploymentExploit(aiHand, pArr_Likely, rule) {
     let bestArrangement = aiHand;
     let secondBestArrangement = aiHand; 
 
+    // AI 遍历自己的所有排列
     for (let aArr of aiPerms) {
         let pWins = 0;
         let aWins = 0;
         for (let i = 0; i < 3; i++) {
-            const winner = Core.compareLane(pArr_Likely[i], aArr[i], modes[i]);
+            // 对抗玩家的实际布阵 (pArrForAI)
+            const winner = Core.compareLane(pArrForAI[i], aArr[i], modes[i]);
             if (winner === 'PLAYER') pWins++;
             else if (winner === 'AI') aWins++;
         }
         
-        let pTotal = Core.calculateMixedSum([], pArr_Likely, rule);
+        let pTotal = Core.calculateMixedSum([], pArrForAI, rule);
         let aTotal = Core.calculateMixedSum([], aArr, rule);
         let damageDifference = Math.abs(pTotal - aTotal); 
         
         let currentNetDamage = 0;
         
+        // 判定伤害 (Minimax goal)
         if (aWins >= 2) {
             if (aWins === 3) damageDifference *= 2;
             currentNetDamage = damageDifference;
@@ -135,6 +128,7 @@ export function getDeploymentExploit(aiHand, pArr_Likely, rule) {
              currentNetDamage = -damageDifference;
         }
 
+        // 记录最优和次优
         if (currentNetDamage > maxNetDamage) {
             secondBestArrangement = bestArrangement; 
             maxNetDamage = currentNetDamage;
@@ -142,6 +136,7 @@ export function getDeploymentExploit(aiHand, pArr_Likely, rule) {
         }
     }
     
+    // 确保次优不等于最优
     if (JSON.stringify(bestArrangement) === JSON.stringify(secondBestArrangement)) {
         const diffArr = aiPerms.find(arr => JSON.stringify(arr) !== JSON.stringify(bestArrangement));
         if (diffArr) secondBestArrangement = diffArr;
