@@ -209,9 +209,11 @@ async function endDraftPhase() {
 
 async function proceedToDeploy() {
     State.phase = 'DEPLOY';
-    // AI 状态改为“正在布阵/准备中”，而不是“已明牌”
+    // 修复：AI 状态设为“准备布阵”，牌位留空
     UI.setAIStatus('AI 准备布阵...');
     updateRealTimeDashboard(); 
+    
+    // 渲染玩家手牌，并使其可点击部署
     const pZone = document.getElementById('player-hand-zone');
     pZone.innerHTML = ''; 
     State.pHand.forEach(value => {
@@ -256,11 +258,15 @@ async function checkDeployFull() {
 async function resolveBattle(pArrangement) {
     UI.setAIStatus('决斗开始！');
     
-    // 【核心修复】AI 布阵在此刻揭晓
+    // 1. 获取 AI 的最优和次优布阵 (ai.js 中的逻辑)
     const pArr_Likely = AI.optimizeHand(State.pHand, State.rule);
-    const aiArrangement = AI.getDeploymentExploit(State.aiHand, pArr_Likely, State.rule);
+    const [bestArr, secondBestArr] = AI.getDeploymentExploit(State.aiHand, pArr_Likely, State.rule);
     
-    // 渲染 AI 槽位
+    // 2. 战略欺骗：15% 几率选择次优解
+    const isBluffing = Math.random() < 0.15;
+    const aiArrangement = isBluffing ? secondBestArr : bestArr; 
+    
+    // 3. 渲染 AI 槽位 (此处才真正揭晓 AI 的布阵)
     for (let i = 0; i < 3; i++) {
         const lane = document.getElementById(`lane-${i}`);
         const aiSlot = lane.querySelector('.ai-slot');
