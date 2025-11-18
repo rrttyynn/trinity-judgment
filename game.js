@@ -1,26 +1,30 @@
 import * as Core from './core.js';
-import * as AI from './ai.js';
 import * as UI from './ui.js';
 
+// === State Refactoring: AI -> P2 ===
 const State = {
-    playerHP: 200,
-    aiHP: 200,
-    pDebt: 0,
-    aiDebt: 0, 
+    p1HP: 200,
+    p2HP: 200, // P2 (formerly AI) HP
+    p1Debt: 0,
+    p2Debt: 0, // P2 Debt
     round: 1,
     deck: [],
     pool: [],
-    pHand: [], 
-    aiHand: [],
+    p1Hand: [], 
+    p2Hand: [], // P2 Hand
+    p1Arrangement: [],
+    p2Arrangement: [], // P2 Deployment
     judgeCard: null,
     rule: null,
-    pDoubling: false,
-    aiDoubling: false,
+    p1Doubling: false,
+    p2Doubling: false, // P2 Doubling
     phase: 'IDLE',
-    firstMover: 'PLAYER',
+    firstMover: 'PLAYER1', // PLAYER1 or PLAYER2
+    activePlayer: 'PLAYER1', // Current player interacting
     heat: 1,
     jackpot: 0,
-    forcedSettle: false 
+    // P2 specific fields
+    p2DebtAction: null 
 };
 
 window.startGame = async () => {
@@ -30,203 +34,175 @@ window.startGame = async () => {
 };
 
 function updateGameState() {
-    UI.updateStats(State.playerHP, State.aiHP, State.pDebt, State.aiDebt);
+    // UI update adjusted for P1/P2
+    UI.updateStats(State.p1HP, State.p2HP, State.p1Debt, State.p2Debt);
     UI.updateEnvironment(State.heat, State.jackpot);
 }
 
-function updateRealTimeDashboard() {
-    let pSum = 0;
-    let aSum = 0;
-    let rate = '?';
-    let dmg = '0';
+// Function to simplify deployment update
+function updatePvpArrangements(p1Arr, p2Arr) {
+    State.p1Arrangement = p1Arr;
+    State.p2Arrangement = p2Arr;
+}
 
-    if (State.phase === 'DEPLOY' || State.phase === 'BATTLE') {
-        const aiArr = AI.optimizeHand(State.aiHand, State.rule);
-        aSum = Core.calculateMixedSum([], aiArr, State.rule);
-    } else {
-        aSum = Core.calculateMixedSum(State.aiHand, [], null);
-    }
-
-    const slots = getPlayerSlots(); 
-    let remainingHand = [...State.pHand];
-    const placedValues = slots.filter(v => v !== null);
+// --- Debt Phase Management ---
+async function handleDebtPhase(player) {
+    State.activePlayer = player;
+    const isP1 = player === 'PLAYER1';
     
-    for (let val of placedValues) {
-        const idx = remainingHand.indexOf(val);
-        if (idx > -1) remainingHand.splice(idx, 1);
-    }
-
-    if (State.phase === 'DEPLOY' || State.phase === 'BATTLE') {
-        rate = Core.getJudgeMultiplier(State.judgeCard);
-        pSum = Core.calculateMixedSum(remainingHand, slots, State.rule);
-        
-        // 【UI Fix】：显示最终加法伤害预测 
-        const damageDifference = Math.abs(pSum - aSum);
-        const multiplierComponent = rate * State.heat;
-        const projectedDamage = damageDifference + multiplierComponent;
-        
-        dmg = `${projectedDamage}`;
-        rate = `${rate}x${State.heat}`;
-    } else {
-        pSum = Core.calculateMixedSum(State.pHand, [], null);
-        rate = State.judgeCard ? Core.getJudgeMultiplier(State.judgeCard) : '?';
-        dmg = `${Math.abs(pSum - aSum)} (Raw)`;
-    }
-
-    UI.updateDashboard(pSum, aSum, rate, dmg);
-}
-
-function getPlayerSlots() {
-    const arr = [null, null, null];
-    for(let i=0; i<3; i++) {
-        const s = document.getElementById(`lane-${i}`).querySelector('.player-slot');
-        if (s.hasAttribute('data-value')) {
-            arr[i] = parseInt(s.getAttribute('data-value'));
+    // Hotseat switch for debt resolution
+    await UI.showHotseatModal(isP1 ? 1 : 2);
+    
+    const debt = isP1 ? State.p1Debt : State.p2Debt;
+    
+    if (debt > 0) {
+        State.phase = 'DEBT';
+        let debtWarning = `死缓池: ${debt}`;
+        if (debt > 100) {
+            debtWarning += " ⚠ 高风险！加注失败将直接扣除生命！";
         }
+        await UI.notify(debtWarning, 1500, debt > 100 ? 'red' : 'red');
+        
+        // Show debt options and wait for user click
+        UI.showDebtOptions(true, isP1 ? 1 : 2);
+        return new Promise(resolve => {
+            window.debtResolved = (action) => {
+                if (action === 'PAY') {
+                    const cost = Math.floor(debt * 0.3);
+                    if (isP1) State.p1HP -= cost; else State.p2HP -= cost;
+                    if (isP1) State.p1Debt = 0; else State.p2Debt = 0;
+                    UI.notify(`已认罪。扣除 ${cost} (30% cost)`, 1000, 'orange');
+                } else {
+                    if (isP1) State.p1Doubling = true; else State.p2Doubling = true;
+                    if (debt > 100) {
+                        UI.notify('极限加注：输了直接扣血！', 1500, 'red');
+                    } else {
+                        UI.notify('加注确认！风险 x1.5', 1000, 'red');
+                    }
+                }
+                UI.showDebtOptions(false);
+                updateGameState();
+                resolve();
+            };
+        });
     }
-    return arr;
 }
+window.debtResolved = () => {}; // Global hook for button clicks
+
+window.payDebt = () => { window.debtResolved('PAY'); };
+window.doubleDown = () => { window.debtResolved('DOUBLE'); };
+
 
 async function startRound() {
     UI.clearBattlefield();
-    State.pHand = [];
-    State.aiHand = [];
-    // Doubling states must be reset only AFTER debt phase resolves
-    // State.pDoubling = false; // Moved to debt resolution end
-    // State.aiDoubling = false; // Moved to debt resolution end
-    State.forcedSettle = false; 
-    State.firstMover = State.round % 2 !== 0 ? 'PLAYER' : 'AI';
-    
+    State.p1Hand = [];
+    State.p2Hand = [];
+    State.p1Doubling = false;
+    State.p2Doubling = false;
+    State.firstMover = State.round % 2 !== 0 ? 'PLAYER1' : 'PLAYER2';
     State.heat = Math.floor((State.round - 1) / 3) + 1;
     updateGameState();
     UI.updateDashboard(0, 0, '?', 0);
 
-    // AI 死缓处理
-    if (State.aiDebt > 0) {
-        await UI.sleep(500);
-        const action = AI.getDebtAction(State.aiHP, State.aiDebt, State.heat); 
+    // 1. P1 Debt Phase
+    await handleDebtPhase('PLAYER1');
+    if (State.p1HP <= 0) { UI.notify('P1 Game Over', 99999, 'red'); return; }
 
-        await UI.showAIDecision(action); 
-        if (action === 'PAY') {
-            const cost = Math.floor(State.aiDebt * 0.3);
-            State.aiHP -= cost;
-            State.aiDebt = 0;
-            UI.notify(`AI 支付了 ${cost} 生命值`, 1000, 'orange');
-        } else {
-            State.aiDoubling = true;
-        }
-        updateGameState();
-    }
-    
-    // 玩家死缓处理
-    if (State.pDebt > 0) {
-        State.phase = 'DEBT';
-        let debtWarning = `死缓池: ${State.pDebt}`;
-        if (State.pDebt > 100) {
-            debtWarning += " ⚠ 高风险！加注失败将直接扣除生命！";
-        }
-        await UI.notify(debtWarning, 1500, State.pDebt > 100 ? 'red' : 'red');
-        UI.showDebtOptions(true);
-        return; 
-    }
-    // 只有在无死缓时才进行重置
-    State.pDoubling = false;
-    State.aiDoubling = false;
+    // 2. P2 Debt Phase
+    await handleDebtPhase('PLAYER2');
+    if (State.p2HP <= 0) { UI.notify('P2 Game Over', 99999, 'red'); return; }
+
+    // 3. Start Drafting
     proceedToDraft();
 }
 
-window.payDebt = async () => {
-    const cost = Math.floor(State.pDebt * 0.3);
-    State.playerHP -= cost;
-    State.pDebt = 0;
-    State.pDoubling = false; // 【BUG FIX】：认罪后重置加注状态
-    updateGameState();
-    UI.showDebtOptions(false);
-    await UI.notify(`已认罪。扣除 ${cost} (30% cost)`, 1000, 'orange');
-    proceedToDraft();
-};
 
-window.doubleDown = async () => {
-    State.pDoubling = true;
-    UI.showDebtOptions(false);
-    if (State.pDebt > 100) {
-        await UI.notify('极限加注：输了直接扣血，赌上一切！', 1500, 'red');
-    } else {
-        await UI.notify('加注确认！风险 x1.5', 1000, 'red');
-    }
-    proceedToDraft();
-};
-
+// --- Drafting Phase ---
 async function proceedToDraft() {
     State.phase = 'DRAFT';
     State.deck = Core.createDeck();
     State.pool = State.deck.slice(0, 7);
-    const turnText = State.firstMover === 'PLAYER' ? '你的先手' : 'AI 先手';
-    await UI.notify(`Round ${State.round} [Heat x${State.heat}]`, 1500, '#ffd700');
-    UI.renderDraftPool(State.pool, handlePlayerDraft);
-    updateRealTimeDashboard(); 
-    if (State.firstMover === 'AI') triggerAiDraft();
-    else UI.setAIStatus('等待玩家先手...');
+    
+    // Determine who starts
+    State.activePlayer = State.firstMover;
+    
+    await UI.notify(`Round ${State.round} [Heat x${State.heat}] - ${State.firstMover} 先手`, 1500, '#ffd700');
+    
+    // Start the draft loop
+    draftLoop();
 }
 
-async function triggerAiDraft() {
-    State.phase = 'AI_THINKING';
-    UI.setAIStatus('AI 正在选牌...');
-    UI.renderDraftPool(State.pool, null);
-    await UI.sleep(500); 
-    const aiPick = AI.getBestDraft(State.pool, State.aiHand, State.pHand, State.jackpot, State.heat);
-    const aIdx = State.pool.indexOf(aiPick);
-    if (aIdx > -1) {
-        State.aiHand.push(aiPick);
-        State.pool.splice(aIdx, 1);
-        const cardName = aiPick === 1 ? 'A' : aiPick === 11 ? 'J' : aiPick === 12 ? 'Q' : aiPick === 13 ? 'K' : aiPick;
-        UI.notify(`AI 拿走了 [ ${cardName} ]`, 800, 'magenta');
-    }
-    UI.renderHand('ai-hand-zone', State.aiHand, false);
-    updateRealTimeDashboard();
-    State.phase = 'DRAFT';
-    if (State.pool.length <= 1) endDraftPhase();
-    else {
-        UI.setAIStatus('轮到你了');
-        UI.renderDraftPool(State.pool, handlePlayerDraft);
-    }
+async function draftLoop() {
+    UI.setPlayerStatus(State.activePlayer === 'PLAYER1' ? 1 : 2, 'Selecting...');
+    
+    // Hotseat switch for drafting
+    await UI.showHotseatModal(State.activePlayer === 'PLAYER1' ? 1 : 2);
+
+    UI.renderDraftPool(State.pool, handleDraftPick);
 }
 
-async function handlePlayerDraft(value) {
+window.handleDraftPick = (value) => {
     if (State.phase !== 'DRAFT') return;
+
+    const isP1 = State.activePlayer === 'PLAYER1';
+    const activeHand = isP1 ? State.p1Hand : State.p2Hand;
+
+    // Pick the card
     const pIdx = State.pool.indexOf(value);
     if (pIdx > -1) {
-        State.pHand.push(value);
+        activeHand.push(value);
         State.pool.splice(pIdx, 1);
     }
-    UI.renderHand('player-hand-zone', State.pHand);
+    
+    // Rerender hands and pool
+    UI.renderHand('p1-hand-zone', State.p1Hand, false);
+    UI.renderHand('p2-hand-zone', State.p2Hand, false);
     UI.renderDraftPool(State.pool, null); 
-    updateRealTimeDashboard(); 
+    
+    // Check for end of draft
     if (State.pool.length === 1) {
         endDraftPhase();
         return;
     }
-    await triggerAiDraft();
-}
+    
+    // Switch turn
+    State.activePlayer = isP1 ? 'PLAYER2' : 'PLAYER1';
+    draftLoop();
+};
+
 
 async function endDraftPhase() {
     State.judgeCard = State.pool[0];
     State.rule = Core.getJudgeRule(State.judgeCard);
+    
     UI.renderDraftPool([], null); 
     await UI.revealJudge(State.judgeCard, State.rule);
-    proceedToDeploy();
+    
+    // 部署阶段：P1 先部署
+    State.activePlayer = 'PLAYER1';
+    proceedToDeployment();
 }
 
-async function proceedToDeploy() {
+
+// --- Deployment Phase ---
+async function proceedToDeployment() {
     State.phase = 'DEPLOY';
-    UI.setAIStatus('AI 准备布阵...');
-    updateRealTimeDashboard(); 
-    const pZone = document.getElementById('player-hand-zone');
-    pZone.innerHTML = ''; 
-    State.pHand.forEach(value => {
-        const card = UI.createCardElement(value, 'player');
+    const isP1 = State.activePlayer === 'PLAYER1';
+    
+    await UI.showHotseatModal(isP1 ? 1 : 2);
+
+    UI.setPlayerStatus(isP1 ? 1 : 2, 'Deploying...');
+    UI.setPlayerStatus(isP1 ? 2 : 1, 'Waiting...');
+    
+    const activeHand = isP1 ? State.p1Hand : State.p2Hand;
+    const handZoneId = isP1 ? 'p1-hand-zone' : 'p2-hand-zone';
+    
+    // Render active player's hand for deployment
+    document.getElementById(handZoneId).innerHTML = '';
+    activeHand.forEach(value => {
+        const card = UI.createCardElement(value, isP1 ? 'p1' : 'p2');
         card.onclick = () => selectCardToDeploy(card, value);
-        pZone.appendChild(card);
+        document.getElementById(handZoneId).appendChild(card);
     });
 }
 
@@ -240,198 +216,218 @@ function selectCardToDeploy(el, value) {
 
 window.placeCard = (laneIndex) => {
     if (!selectedDeployCard || State.phase !== 'DEPLOY') return;
+    const isP1 = State.activePlayer === 'PLAYER1';
+    const slotSelector = isP1 ? '.p1-slot' : '.p2-slot';
     const lane = document.getElementById(`lane-${laneIndex}`);
-    const slot = lane.querySelector('.player-slot');
+    const slot = lane.querySelector(slotSelector);
+    
     if (slot.hasAttribute('data-value')) return; 
     
     slot.innerHTML = '';
-    slot.appendChild(UI.createCardElement(selectedDeployCard.value, 'player'));
+    slot.appendChild(UI.createCardElement(selectedDeployCard.value, isP1 ? 'p1' : 'p2'));
     slot.setAttribute('data-value', selectedDeployCard.value);
     selectedDeployCard.el.remove();
     selectedDeployCard = null;
-    updateRealTimeDashboard();
-    checkDeployFull();
+    
+    // Update the hand array (remove the card)
+    const activeHand = isP1 ? State.p1Hand : State.p2Hand;
+    const cardIndex = activeHand.indexOf(selectedDeployCard.value);
+    if (cardIndex > -1) activeHand.splice(cardIndex, 1);
+    
+    checkDeployCompletion();
 };
 
-async function checkDeployFull() {
-    const slots = getPlayerSlots();
-    if (slots[0] && slots[1] && slots[2]) {
-        updateRealTimeDashboard("CALCULATING..."); 
-        await UI.sleep(500);
-        resolveBattle(slots); 
+async function checkDeployCompletion() {
+    const isP1 = State.activePlayer === 'PLAYER1';
+    const activeHand = isP1 ? State.p1Hand : State.p2Hand;
+
+    // Check if the current player's hand is empty (3 cards placed)
+    if (activeHand.length === 0) {
+        
+        // If P1 just finished, switch to P2 deployment
+        if (isP1) {
+            State.activePlayer = 'PLAYER2';
+            proceedToDeployment();
+        } 
+        // If P2 just finished, start the battle
+        else {
+            State.phase = 'BATTLE';
+            UI.setPlayerStatus(1, 'Awaiting Battle');
+            UI.setPlayerStatus(2, 'Awaiting Battle');
+            await UI.sleep(500);
+            resolveBattle();
+        }
     }
 }
 
-async function resolveBattle(pArrangement) {
-    UI.setAIStatus('决斗开始！');
-    
-    // 1. AI 部署 (全知反制)
-    const [bestArr, secondBestArr] = AI.getDeploymentExploit(State.aiHand, pArrangement, State.rule);
-    
-    const isBluffing = Math.random() < 0.15;
-    const aiArrangement = isBluffing ? secondBestArr : bestArr; 
-    
-    // 渲染 AI 槽位
-    for (let i = 0; i < 3; i++) {
-        const lane = document.getElementById(`lane-${i}`);
-        const aiSlot = lane.querySelector('.ai-slot');
-        aiSlot.innerHTML = '';
-        aiSlot.appendChild(UI.createCardElement(aiArrangement[i], 'ai'));
+
+// --- Battle Resolution Phase ---
+async function resolveBattle() {
+    // 收集最终部署的卡牌数组
+    const p1Arrangement = getDeployedCards('p1');
+    const p2Arrangement = getDeployedCards('p2');
+
+    // 检查数组完整性
+    if (p1Arrangement.length !== 3 || p2Arrangement.length !== 3) {
+         return UI.notify('Error: Incomplete deployment!', 99999, 'red');
     }
-    
-    await UI.sleep(800);
-    
-    let pWins = 0;
-    let aWins = 0;
+
+    UI.setPlayerStatus(1, 'Dueling...');
+    UI.setPlayerStatus(2, 'Dueling...');
+
+    let p1Wins = 0;
+    let p2Wins = 0;
     const modes = Core.getLaneModes(State.rule);
     const multiplier = Core.getJudgeMultiplier(State.judgeCard);
 
     // 1. 获取总点数，用于伤害计算
-    const damageDifference = Core.calculateDamageDifference(pArrangement, aiArrangement, State.rule);
-    const pTotal = Core.calculateMixedSum([], pArrangement, State.rule);
-    const aTotal = Core.calculateMixedSum([], aiArrangement, State.rule);
+    const p1Total = Core.calculateMixedSum([], p1Arrangement, State.rule);
+    const p2Total = Core.calculateMixedSum([], p2Arrangement, State.rule);
+    const damageDifference = Math.abs(p1Total - p2Total); 
     
     // 2. 逐路判定 (演出)
     for (let i = 0; i < 3; i++) {
         const lane = document.getElementById(`lane-${i}`);
-        const indicator = lane.querySelector('.rule-indicator');
+        const indicator = lane.querySelector('.rule-icon');
         
-        const pCard = pArrangement[i];
-        const aCard = aiArrangement[i];
+        const p1Card = p1Arrangement[i];
+        const p2Card = p2Arrangement[i];
         const mode = modes[i];
         
-        const pValEff = Core.getCardPoint(pCard, mode);
-        const aValEff = Core.getCardPoint(aCard, mode);
+        const p1ValEff = Core.getCardPoint(p1Card, mode);
+        const p2ValEff = Core.getCardPoint(p2Card, mode);
         
-        const winner = Core.compareLane(pCard, aCard, mode);
+        const winner = Core.compareLane(p1Card, p2Card, mode);
         
-        // 视觉演出 (规则)
         indicator.innerText = modes[i] === 'HIGH' ? 'HIGH' : 'LOW';
         indicator.style.color = 'white';
         await UI.sleep(1500); 
 
-        // 统计胜场 & 提示
         if (winner === 'PLAYER') {
-            pWins++;
+            p1Wins++;
             lane.style.borderColor = '#00f3ff';
-            lane.style.boxShadow = '0 0 20px #00f3ff';
-            indicator.innerText = 'WIN'; 
-            await UI.notify(`Player Wins Lane ${i+1}! (${pValEff} vs ${aValEff})`, 1000, '#00f3ff');
-        } else if (winner === 'AI') {
-            aWins++;
+            indicator.innerText = 'P1 WIN'; 
+            await UI.notify(`P1 Wins Lane ${i+1}! (${p1ValEff} vs ${p2ValEff})`, 1000, '#00f3ff');
+        } else if (winner === 'AI') { // AI winner becomes P2 winner
+            p2Wins++;
             lane.style.borderColor = '#ff2a6d';
-            lane.style.boxShadow = '0 0 20px #ff2a6d';
-            indicator.innerText = 'WIN';
-            await UI.notify(`AI Wins Lane ${i+1}! (${pValEff} vs ${aValEff})`, 1000, '#ff2a6d');
+            indicator.innerText = 'P2 WIN';
+            await UI.notify(`P2 Wins Lane ${i+1}! (${p1ValEff} vs ${p2ValEff})`, 1000, '#ff2a6d');
         } else {
             lane.style.borderColor = '#ffd700';
-            
-            const isAceLocked = (Core.getCardPoint(pCard) === 1 && Core.getCardPoint(aCard) >= 11) || 
-                                (Core.getCardPoint(aCard) === 1 && Core.getCardPoint(pCard) >= 11);
-
-            if (isAceLocked) {
-                 await UI.notify(`Lane ${i+1}: Ace Lockdown! (DRAW)`, 1000, 'red');
-                 indicator.innerText = 'LOCK';
-                 indicator.style.color = 'red';
-            } else {
-                 await UI.notify(`Lane ${i+1}: Draw (${pValEff} vs ${aValEff})`, 1000, '#ffd700');
-                 indicator.innerText = `DRAW`;
-            }
+            indicator.innerText = `DRAW`; 
+            await UI.notify(`Lane ${i+1}: Draw (${p1ValEff} vs ${p2ValEff})`, 1000, '#ffd700');
         }
         
-        // 4. 更新总分 (实时)
-        const currentTotalDamage = damageDifference + (multiplier * State.heat) + State.jackpot;
-        UI.updateDashboard(pTotal, aTotal, multiplier + "x" + State.heat, currentTotalDamage);
+        // Update Dashboard with current battle stats
+        UI.updateDashboard(p1Total, p2Total, multiplier + "x" + State.heat, damageDifference + multiplier * State.heat + State.jackpot);
         await UI.sleep(500); 
     }
 
-    // 3. 最终结算
-    // 伤害公式：|分差| + (倍率 * 热度)
+    // --- Final Tally and Consequence ---
     let baseDamageWithHeat = damageDifference + (multiplier * State.heat); 
-
     let isDraw = false;
-    let winner = null;
-    if (pWins >= 2) winner = 'PLAYER';
-    else if (aWins >= 2) winner = 'AI';
+    let winner = null; // 'P1', 'P2' or null
+    
+    if (p1Wins >= 2) winner = 'P1';
+    else if (p2Wins >= 2) winner = 'P2';
     else isDraw = true;
 
-    // 完胜翻倍
-    if ((winner === 'PLAYER' && pWins === 3) || (winner === 'AI' && aWins === 3)) {
+    // Optional: Trinity Crush Bonus
+    if ((winner === 'P1' && p1Wins === 3) || (winner === 'P2' && p2Wins === 3)) {
          baseDamageWithHeat *= 2;
-         await UI.notify('⚡ 三相碾压！伤害翻倍！⚡', 2000, '#ffd700');
+         await UI.notify('⚡ Trinity Crush! Damage x2! ⚡', 2000, '#ffd700');
     }
     
-    // 4. 应用 JACKPOT 和惩罚
     if (isDraw) {
-        // Jackpot 固定累积 10
         State.jackpot += 10; 
-        await UI.notify('平局！伤害存入奖池 (+10)', 2000, 'white');
+        await UI.notify('Draw! Jackpot +10!', 2000, 'white');
     } 
     else {
         const finalDamage = baseDamageWithHeat + State.jackpot;
+        const loserIsP1 = winner === 'P2';
         
-        if (winner === 'PLAYER') {
-            await UI.notify(`胜利！造成 ${finalDamage}`, 2000, '#00f3ff');
-            
-            let damageToAI = finalDamage;
-            if (State.aiDoubling && State.aiDebt > 100) {
-                 const totalPenalty = State.aiDebt + Math.floor(finalDamage * 1.5);
-                 await UI.notify(`AI 极限失败：清算总额 ${totalPenalty} HP！`, 1500, 'red');
-                 State.aiHP -= totalPenalty; 
-                 State.aiDebt = 0; 
-            } 
-            else if (State.aiDoubling) {
-                 State.aiHP -= Math.floor(damageToAI * 1.5);
-            }
-            else {
-                State.aiDebt += damageToAI;
-            }
-
-            // 【BUG FIX】：玩家胜利，清空负债和加注状态
-            State.pDebt = 0;
-            State.pDoubling = false;
-            State.aiDoubling = false; // AI doubling must be cleared too
+        if (winner === 'P1') {
+            await applyDamageAndDebt(finalDamage, State.p2Debt, State.p2Doubling, 'PLAYER2', 'PLAYER1');
+            if (State.p1Debt > 0) State.p1Debt = 0; // Winner clears own debt
         } 
-        else { // AI WIN - 玩家失败
-            await UI.notify(`失败... 承受 ${finalDamage}`, 2000, '#ff2a6d');
-            
-            let damageToPlayer = finalDamage;
-
-            if (State.pDoubling && State.pDebt > 100) {
-                const totalPenalty = State.pDebt + Math.floor(finalDamage * 1.5);
-                await UI.notify(`极限失败：清算总额 ${totalPenalty} HP！`, 1500, 'red');
-                State.playerHP -= totalPenalty; 
-                State.pDebt = 0; 
-            } 
-            else {
-                // 累积新负债
-                State.pDebt += damageToPlayer;
-                // 如果是加注状态，负债按 1.5x 累积
-                if (State.pDoubling) State.pDebt += Math.floor(damageToPlayer * 0.5); 
-            }
-            
-            // 【BUG FIX】：玩家失败，清空 AI 负债和加注状态
-            State.aiDebt = 0;
-            State.aiDoubling = false;
-            
-            // 【BUG FIX】：无论是否进入高风险清算，玩家加注状态都必须重置
-            State.pDoubling = false;
+        else { // Winner is P2
+            await applyDamageAndDebt(finalDamage, State.p1Debt, State.p1Doubling, 'PLAYER1', 'PLAYER2');
+            if (State.p2Debt > 0) State.p2Debt = 0; // Winner clears own debt
         }
         State.jackpot = 0;
     }
     
     updateGameState();
     
-    // 检查死亡
-    if (State.playerHP <= 0) { UI.notify('GAME OVER', 99999, 'red'); return; }
-    if (State.aiHP <= 0) { UI.notify('VICTORY', 99999, 'gold'); return; }
+    // --- Final Death Check ---
+    if (State.p1HP <= 0) { UI.notify('P1 GAME OVER', 99999, 'red'); return; }
+    if (State.p2HP <= 0) { UI.notify('P2 GAME OVER', 99999, 'red'); return; }
     
     State.round++;
     await UI.sleep(3000);
-    document.querySelectorAll('.lane').forEach(l => {
+    
+    // Clear lane highlights and reset for next round
+    document.querySelectorAll('.lane-column').forEach(l => {
         l.style.borderColor = 'rgba(255,255,255,0.1)';
         l.style.boxShadow = 'none';
-        l.querySelector('.rule-indicator').innerText = '?';
+        l.querySelector('.rule-icon').innerText = '?';
     });
+    
     startRound();
+}
+
+// Helper to collect deployed cards
+function getDeployedCards(player) {
+    const arr = [];
+    const slotSelector = player === 'p1' ? '.p1-slot' : '.p2-slot';
+    for(let i=0; i<3; i++) {
+        const slot = document.getElementById(`lane-${i}`).querySelector(slotSelector);
+        if (slot.hasAttribute('data-value')) {
+            arr.push(parseInt(slot.getAttribute('data-value')));
+        }
+    }
+    return arr;
+}
+
+// Helper to apply damage and debt penalties (Centralizing the Extreme Doubling logic)
+async function applyDamageAndDebt(damage, loserDebt, loserDoubling, loserName, winnerName) {
+    let damageToApply = damage;
+    const isExtreme = loserDebt > 100 && loserDoubling;
+    const isP1Loser = loserName === 'PLAYER1';
+
+    if (isExtreme) {
+        const debtPenalty = loserDebt;
+        const roundPenalty = Math.floor(damage * 1.5);
+        const totalPenalty = debtPenalty + roundPenalty;
+        
+        await UI.notify(`${loserName} 极限失败：清算总额 ${totalPenalty} HP！`, 1500, 'red');
+        
+        if (isP1Loser) State.p1HP -= totalPenalty;
+        else State.p2HP -= totalPenalty;
+        
+        // Debt is cleared due to payment
+        if (isP1Loser) State.p1Debt = 0;
+        else State.p2Debt = 0;
+        
+    } else if (loserDoubling) {
+        // Normal Doubling loss (1.5x to debt pool)
+        const penalty = Math.floor(damageToApply * 1.5);
+        if (isP1Loser) State.p1Debt += penalty;
+        else State.p2Debt += penalty;
+    } else {
+        // Normal Loss (added to debt pool)
+        if (isP1Loser) State.p1Debt += damageToApply;
+        else State.p2Debt += damageToApply;
+    }
+
+    // Reset doubling state
+    if (isP1Loser) State.p1Doubling = false;
+    else State.p2Doubling = false;
+
+    // Reset doubling state on winner (just in case they were doubling last round)
+    if (winnerName === 'PLAYER1') State.p1Doubling = false;
+    else State.p2Doubling = false;
+
+    await UI.notify(`${loserName} Loses!`, 1000, '#ff2a6d');
 }

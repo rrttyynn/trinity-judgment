@@ -3,169 +3,158 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>三相审判 (Trinity Judgment)</title>
+    <title>三相审判 (PvP Hotseat)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <aside class="tutorial-panel">
-        <h2>操作手册 vJiLaFAR (最终版)</h2>
+        <h2>操作手册 v6.0 (双人模式)</h2>
         
         <div class="rule-section">
-            <h3>1. 胜负标准</h3>
-            <p><b>获胜:</b> 赢下 <b>2 路或 3 路</b> (由单路比大小决定)。</p>
-            <p><b>完胜 (3-0):</b> 最终伤害<b>翻倍 (x2)</b>。</p>
+            <h3>1. 核心流程与规则</h3>
+            <p><b>模式:</b> 同设备轮流对战 (Hotseat)。</p>
+            <p><b>获胜:</b> 赢下 2 路或 3 路。</p>
+            <p><b>部署:</b> 双方部署时对方不得观看。</p>
         </div>
 
         <div class="rule-section">
-            <h3>2. 数值特权与制衡</h3>
+            <h3>2. 极限机制</h3>
             <ul>
-                <li><b>A (王牌):</b> 在比大路算 <b>14</b> (MAX)，在比小路算 <b>1</b> (MIN)。</li>
-                <li><b>A vs J/Q/K:</b> 触发 **王牌锁定**，该巷道强制判为 **平局** (DRAW)。</li>
-            </ul>
-        </div>
-        
-        <div class="rule-section">
-            <h3>3. 伤害与风险</h3>
-            <p class="formula">伤害 = |双方总点数差| × 审判倍率 × 环境热度</p>
-            <ul>
-                <li><b>热度 (Heat):</b> 随回合数递增 (R4=x2, R7=x3...)。</li>
-                <li><b>平局 (DRAW):</b> 伤害存入 **死斗奖池 (Jackpot)**，下回合赢家拿走。</li>
+                <li><b>热度 (Heat):</b> 伤害乘数随回合递增。</li>
+                <li><b>平局:</b> 伤害存入 **死斗奖池**。</li>
+                <li><b>极限加注:</b> 若死缓 > 100 仍加注，输则 **1.5倍伤害直接扣除 HP**。</li>
             </ul>
         </div>
 
         <div class="rule-section">
-            <h3>4. 极限死缓 (DEBT)</h3>
+            <h3>3. 对局制衡</h3>
             <ul>
-                <li><b>认罪:</b> 支付 30% 债务清零。</li>
-                <li><b>极限加注:</b> 若死缓 > 100 仍加注，输则 <b>1.5倍伤害直接扣除 HP</b>，债务清零。</li>
+                <li><b>A vs J/Q/K:</b> 触发 **王牌锁定**，该巷道强制判为 **平局**。</li>
+                <li><b>赔率:</b> 认罪成本 30%；加注惩罚 1.5倍。</li>
             </ul>
-            <p class="warning">警告: 地狱级 AI 能够完美预测你的行动。</p>
         </div>
         
-        <div class="credit">SYSTEM ONLINE / FINAL BUILD</div>
+        <div class="credit">SYSTEM ONLINE / PvP MODE</div>
     </aside>
 
     <main class="game-stage">
         
-        <div class="hud-top">
-            <div class="profile ai-profile">
-                <div class="avatar">AI</div>
-                <div class="hp-bar-container">
-                    <div class="hp-bar" id="ai-hp-bar" style="width: 100%;"></div>
-                    <span id="ai-hp-text">200 / 200</span>
+        <div class="player-hud p2-hud">
+            <div class="avatar-container">
+                <div class="avatar p2-avatar">P2</div>
+                <div class="debt-badge p2-debt" id="p2-debt-display">
+                    <span>DEBT:</span>
+                    <span id="p2-debt-val" class="val">0</span>
                 </div>
             </div>
-            <div class="death-pool-mini" id="ai-death-pool">
-                <span>DEBT:</span>
-                <span id="ai-debt-val" class="val">0</span>
+            <div class="bars-container">
+                <div class="name-tag">PLAYER 2 <span id="p2-status" class="status-text">WAITING</span></div>
+                <div class="hp-track">
+                    <div class="hp-fill" id="p2-hp-bar" style="width: 100%;"></div>
+                    <span class="hp-text" id="p2-hp-text">200 / 200</span>
+                </div>
             </div>
-            <div class="status-display" id="ai-status">等待信号...</div>
         </div>
 
-        <div class="battlefield">
+        <div class="dashboard-strip hidden" id="dashboard-panel">
+            <div class="stat-box">
+                <label>P1 SUM</label>
+                <div class="value cyan" id="dash-p1sum">0</div>
+            </div>
+            <div class="vs-divider">VS</div>
+            <div class="stat-box">
+                <label>P2 SUM</label>
+                <div class="value p2-color" id="dash-p2sum">0</div>
+            </div>
+            <div class="vertical-sep"></div>
+            <div class="stat-box">
+                <label>RATE</label>
+                <div class="value gold" id="dash-rate">x1</div>
+            </div>
+            <div class="stat-box wide">
+                <label>PREDICTED DAMAGE</label>
+                <div class="value danger" id="dash-dmg">0</div>
+            </div>
+        </div>
+
+        <div class="table-mat">
             
-            <div class="env-strip">
-                <div class="env-box">
-                    <span class="label">ENV HEAT</span>
-                    <span class="val danger" id="env-heat">Lv.1</span>
-                </div>
-                <div class="env-box">
-                    <span class="label">JACKPOT</span>
-                    <span class="val gold" id="env-jackpot">0</span>
-                </div>
-            </div>
+            <div class="hand-area opponent" id="p2-hand-zone"></div>
 
-            <div class="hand-zone opponent" id="ai-hand-zone"></div>
-
-            <div class="center-deck">
+            <div class="center-zone">
+                <div class="draft-container" id="draft-pool"></div>
                 
-                <div class="dashboard-panel" id="dashboard-panel">
-                    <div class="dash-col">
-                        <span class="dash-label">PLAYER SUM</span>
-                        <span class="dash-val cyan" id="dash-psum">0</span>
-                    </div>
-                    <div class="dash-vs">VS</div>
-                    <div class="dash-col">
-                        <span class="dash-label">AI SUM</span>
-                        <span class="dash-val red" id="dash-asum">0</span>
-                    </div>
-                    <div class="dash-divider"></div>
-                    <div class="dash-col">
-                        <span class="dash-label">倍率</span>
-                        <span class="dash-val gold" id="dash-rate">?</span>
-                    </div>
-                    <div class="dash-col wide">
-                        <span class="dash-label">预计伤害</span>
-                        <span class="dash-val danger" id="dash-dmg">0</span>
-                    </div>
-                </div>
+                <div class="judge-container hidden" id="judge-slot"></div>
+            </div>
 
-                <div class="draft-pool" id="draft-pool"></div>
-                
-                <div class="judge-slot hidden" id="judge-slot">
-                    <div class="card-placeholder">审判牌</div>
+            <div class="lanes-wrapper" id="lanes-container">
+                <div class="lane-column" id="lane-0">
+                    <div class="slot p2-slot"></div>
+                    <div class="lane-info">
+                        <span class="lane-name">天 (TOP)</span>
+                        <span class="rule-icon" id="lane-rule-0">?</span>
+                    </div>
+                    <div class="slot p1-slot" onclick="placeCard(0)"></div>
+                </div>
+                <div class="lane-column" id="lane-1">
+                    <div class="slot p2-slot"></div>
+                    <div class="lane-info">
+                        <span class="lane-name">地 (MID)</span>
+                        <span class="rule-icon" id="lane-rule-1">?</span>
+                    </div>
+                    <div class="slot p1-slot" onclick="placeCard(1)"></div>
+                </div>
+                <div class="lane-column" id="lane-2">
+                    <div class="slot p2-slot"></div>
+                    <div class="lane-info">
+                        <span class="lane-name">人 (BOT)</span>
+                        <span class="rule-icon" id="lane-rule-2">?</span>
+                    </div>
+                    <div class="slot p1-slot" onclick="placeCard(2)"></div>
                 </div>
             </div>
 
-            <div class="lanes-container" id="lanes-container">
-                <div class="lane" id="lane-0">
-                    <div class="lane-label">天 (TOP)</div>
-                    <div class="slot ai-slot"></div>
-                    <div class="rule-indicator">?</div>
-                    <div class="slot player-slot" onclick="placeCard(0)"></div>
-                </div>
-                <div class="lane" id="lane-1">
-                    <div class="lane-label">地 (MID)</div>
-                    <div class="slot ai-slot"></div>
-                    <div class="rule-indicator">?</div>
-                    <div class="slot player-slot" onclick="placeCard(1)"></div>
-                </div>
-                <div class="lane" id="lane-2">
-                    <div class="lane-label">人 (BOT)</div>
-                    <div class="slot ai-slot"></div>
-                    <div class="rule-indicator">?</div>
-                    <div class="slot player-slot" onclick="placeCard(2)"></div>
-                </div>
-            </div>
-
-            <div class="hand-zone player" id="player-hand-zone"></div>
+            <div class="hand-area player" id="p1-hand-zone"></div>
 
         </div>
 
-        <div class="hud-bottom">
-            <div class="profile player-profile">
-                <div class="avatar">YOU</div>
-                <div class="hp-bar-container">
-                    <div class="hp-bar" id="player-hp-bar" style="width: 100%;"></div>
-                    <span id="player-hp-text">200 / 200</span>
+        <div class="player-hud p1-hud">
+            <div class="avatar-container">
+                <div class="avatar user-avatar">P1</div>
+                <div class="debt-badge player-debt" id="p1-debt-display">
+                    <small>DEBT</small>
+                    <span id="p1-debt-val">0</span>
+                    <div id="pool-warning" class="hidden">!</div>
                 </div>
             </div>
-
-            <div class="death-pool-container" id="death-pool-display">
-                <div class="pool-label">💀 你的死缓池</div>
-                <div class="pool-value" id="death-pool-value">0</div>
-                <div class="pool-warning hidden" id="pool-warning">危险!</div>
+            <div class="bars-container">
+                <div class="name-tag">PLAYER 1</div>
+                <div class="hp-track">
+                    <div class="hp-fill user-fill" id="p1-hp-bar" style="width: 100%;"></div>
+                    <span class="hp-text" id="p1-hp-text">200 / 200</span>
+                </div>
             </div>
-
-            <div class="actions-panel" id="action-panel">
-                <button class="btn primary" id="btn-start" onclick="startGame()">开始游戏</button>
-                <div id="debt-actions" class="hidden">
-                    <button class="btn warning" onclick="payDebt()">💸 认罪 (PAY)</button>
-                    <button class="btn danger" onclick="doubleDown()">⚔️ 加注 (RISK)</button>
+            
+            <div class="control-panel">
+                <button class="btn primary main-btn" id="btn-start" onclick="startGame()">START ROUND</button>
+                <div id="debt-actions" class="action-group hidden">
+                    <button class="btn pay-btn" onclick="payDebt()">认罪 (PAY)</button>
+                    <button class="btn risk-btn" onclick="doubleDown()">加注 (RISK)</button>
                 </div>
             </div>
         </div>
 
+        <div class="hotseat-modal hidden" id="hotseat-modal">
+            <div class="hotseat-card">
+                <h3 id="hotseat-title">PLAYER 2: YOUR TURN</h3>
+                <p>请 P1 避开屏幕，P2 点击确认。</p>
+                <button class="btn main-btn" id="btn-hotseat-confirm">CONFIRM</button>
+            </div>
+        </div>
+        
         <div id="notification-layer" class="notification hidden"></div>
         
-        <div id="ai-decision-modal" class="modal hidden">
-            <div class="modal-content">
-                <h3>AI 正在做出抉择...</h3>
-                <div class="loader"></div>
-                <p id="ai-decision-text" class="decision-text"></p>
-            </div>
-        </div>
 
     </main>
 

@@ -1,12 +1,14 @@
 :root {
-    --bg-color: #0a0b10;
-    --panel-bg: #14161f;
-    --text-color: #e0e0e0;
-    --primary-cyan: #00f3ff;
-    --danger-red: #ff2a6d;
-    --gold: #ffd700;
-    --card-width: 70px;
-    --card-height: 100px;
+    --bg-dark: #0f1014;
+    --bg-panel: #1a1c24;
+    --accent-gold: #c5a059;
+    --accent-red: #ff2a6d; /* AI Color -> Danger */
+    --accent-p2: #8e44ad; /* New P2 Color (Purple) */
+    --accent-cyan: #0984e3; /* P1 Color */
+    --text-main: #dfe6e9;
+    --text-muted: #636e72;
+    --card-w: 70px;
+    --card-h: 100px;
 }
 
 * { box-sizing: border-box; user-select: none; }
@@ -224,3 +226,60 @@ body.screen-shake {
 /* HP 闪烁反馈 */
 .hp-bar-container.damage-flash #ai-hp-bar { background: white; box-shadow: 0 0 20px white; }
 .hp-bar-container.damage-flash #player-hp-bar { background: white; box-shadow: 0 0 20px white; }
+
+/* === HUD 上下状态栏 === */
+.player-hud {
+    /* ... (rest remains the same) */
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.user-hud { border-top: 1px solid rgba(255,255,255,0.05); border-bottom: none; margin-top: auto; }
+
+/* 适配 P2 颜色 */
+.p2-avatar { border-color: var(--accent-p2); color: var(--accent-p2); background: #1a051a; }
+.p2-debt { border: 1px solid var(--accent-p2); }
+.p2-debt .val { color: var(--accent-p2); }
+#p2-hp-bar { background: var(--accent-p2); box-shadow: 0 0 10px var(--accent-p2); }
+
+/* P1 (用户) 颜色 */
+.user-avatar { border-color: var(--accent-cyan); color: var(--accent-cyan); background: #05101a; }
+.hp-fill.user-fill { background: var(--accent-cyan); }
+
+/* 战场区域 */
+.p2-slot { border-color: var(--accent-p2) !important; }
+.p2-slot:hover { border-color: var(--accent-p2); background: rgba(142, 68, 173, 0.1); } /* P2 Hover */
+
+.p1-slot:hover { border-color: var(--accent-cyan); background: rgba(9, 132, 227, 0.1); cursor: pointer; } /* P1 Hover */
+
+/* 核心卡牌颜色适配 */
+.card.p2-card { border-bottom: 4px solid var(--accent-p2); }
+.card.p1-card { border-bottom: 4px solid var(--accent-cyan); }
+
+/* 仪表盘颜色适配 */
+.dash-col .p2-color { color: var(--accent-p2); }
+.dash-col .cyan { color: var(--accent-cyan); }
+
+
+/* === Hotseat Modal (新增) === */
+.hotseat-modal {
+    position: fixed; inset: 0; 
+    background: rgba(0,0,0,0.95);
+    display: flex; align-items: center; justify-content: center; 
+    z-index: 500;
+}
+.hotseat-card {
+    background: #1a1c24; 
+    border: 3px solid var(--accent-gold);
+    padding: 50px; 
+    border-radius: 10px;
+    text-align: center;
+    box-shadow: 0 0 50px rgba(197, 160, 89, 0.5);
+}
+.hotseat-card h3 { 
+    color: var(--accent-gold); 
+    font-size: 1.8rem; 
+    margin-bottom: 20px;
+}
+.hotseat-card p {
+    color: #bbb;
+    margin-bottom: 30px;
+}
