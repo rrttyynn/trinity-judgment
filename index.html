@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三相审判 (Trinity Judgment)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <aside class="tutorial-panel">
+        <h2>操作手册 v3.1</h2>
+        
+        <div class="rule-section">
+            <h3>1. 核心流程</h3>
+            <ul>
+                <li><b>抢牌:</b> 7张公共牌，双方轮流抓取，各持3张。</li>
+                <li><b>审判:</b> 第7张未被选中的牌决定本局规则。</li>
+                <li><b>布阵:</b> 将手牌分配至 [天] [地] [人] 三路。</li>
+            </ul>
+        </div>
+
+        <div class="rule-section">
+            <h3>2. 胜负规则</h3>
+            <p><b>奇数审判 (1, 3, 5...):</b><br>天(比大) / 地(比小) / 人(比大)</p>
+            <p><b>偶数审判 (2, 4, 6...):</b><br>天(比小) / 地(比大) / 人(比小)</p>
+            <ul>
+                <li><b>获胜:</b> 赢下 2 路或 3 路。</li>
+                <li><b>三相碾压:</b> 赢下全部 3 路 (3-0)，<b>最终伤害 x2</b>。</li>
+            </ul>
+        </div>
+
+        <div class="rule-section">
+            <h3>3. 特殊数值 (A)</h3>
+            <ul>
+                <li><b>作为手牌:</b> <br>在“比大”路算 <b>14</b> (MAX)<br>在“比小”路算 <b>1</b> (MIN)</li>
+                <li><b>作为审判牌:</b> 风险倍率锁定为 <b>14倍</b>。</li>
+            </ul>
+        </div>
+
+        <div class="rule-section">
+            <h3>4. 伤害与死缓</h3>
+            <p class="formula">伤害 = |分差| × 审判倍率</p>
+            <ul>
+                <li><b>赢家:</b> 清空自己当前的死缓池。</li>
+                <li><b>输家:</b> 伤害累积进入死缓池。</li>
+                <li><span class="warning">警告:</span> 若死缓池 > 100，立即爆仓处决。</li>
+            </ul>
+        </div>
+        
+        <div class="credit">SYSTEM READY</div>
+    </aside>
+
+    <main class="game-stage">
+        
+        <div class="hud-top">
+            <div class="profile ai-profile">
+                <div class="avatar">AI</div>
+                <div class="hp-bar-container">
+                    <div class="hp-bar" id="ai-hp-bar" style="width: 100%;"></div>
+                    <span id="ai-hp-text">200 / 200</span>
+                </div>
+            </div>
+            <div class="death-pool-mini" id="ai-death-pool">
+                <span>DEBT:</span>
+                <span id="ai-debt-val" class="val">0</span>
+            </div>
+            <div class="status-display" id="ai-status">等待信号...</div>
+        </div>
+
+        <div class="battlefield">
+            
+            <div class="hand-zone opponent" id="ai-hand-zone"></div>
+
+            <div class="center-deck">
+                
+                <div class="dashboard-panel" id="dashboard-panel">
+                    <div class="dash-col">
+                        <span class="dash-label">PLAYER SUM</span>
+                        <span class="dash-val cyan" id="dash-psum">0</span>
+                    </div>
+                    <div class="dash-vs">VS</div>
+                    <div class="dash-col">
+                        <span class="dash-label">AI SUM</span>
+                        <span class="dash-val red" id="dash-asum">0</span>
+                    </div>
+                    <div class="dash-divider"></div>
+                    <div class="dash-col">
+                        <span class="dash-label">倍率</span>
+                        <span class="dash-val gold" id="dash-rate">?</span>
+                    </div>
+                    <div class="dash-col wide">
+                        <span class="dash-label">预计伤害</span>
+                        <span class="dash-val danger" id="dash-dmg">0</span>
+                    </div>
+                </div>
+
+                <div class="draft-pool" id="draft-pool"></div>
+                
+                <div class="judge-slot hidden" id="judge-slot">
+                    <div class="card-placeholder">审判牌</div>
+                </div>
+            </div>
+
+            <div class="lanes-container" id="lanes-container">
+                <div class="lane" id="lane-0">
+                    <div class="lane-label">天 (TOP)</div>
+                    <div class="slot ai-slot"></div>
+                    <div class="rule-indicator">?</div>
+                    <div class="slot player-slot" onclick="placeCard(0)"></div>
+                </div>
+                <div class="lane" id="lane-1">
+                    <div class="lane-label">地 (MID)</div>
+                    <div class="slot ai-slot"></div>
+                    <div class="rule-indicator">?</div>
+                    <div class="slot player-slot" onclick="placeCard(1)"></div>
+                </div>
+                <div class="lane" id="lane-2">
+                    <div class="lane-label">人 (BOT)</div>
+                    <div class="slot ai-slot"></div>
+                    <div class="rule-indicator">?</div>
+                    <div class="slot player-slot" onclick="placeCard(2)"></div>
+                </div>
+            </div>
+
+            <div class="hand-zone player" id="player-hand-zone"></div>
+
+        </div>
+
+        <div class="hud-bottom">
+            <div class="profile player-profile">
+                <div class="avatar">YOU</div>
+                <div class="hp-bar-container">
+                    <div class="hp-bar" id="player-hp-bar" style="width: 100%;"></div>
+                    <span id="player-hp-text">200 / 200</span>
+                </div>
+            </div>
+
+            <div class="death-pool-container" id="death-pool-display">
+                <div class="pool-label">💀 你的死缓池</div>
+                <div class="pool-value" id="death-pool-value">0</div>
+                <div class="pool-warning hidden" id="pool-warning">危险!</div>
+            </div>
+
+            <div class="actions-panel" id="action-panel">
+                <button class="btn primary" id="btn-start" onclick="startGame()">开始游戏</button>
+                <div id="debt-actions" class="hidden">
+                    <button class="btn warning" onclick="payDebt()">💸 认罪 (-50% HP)</button>
+                    <button class="btn danger" onclick="doubleDown()">⚔️ 加注 (风险 x1.5)</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="notification-layer" class="notification hidden"></div>
+        
+        <div id="ai-decision-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>AI 正在做出抉择...</h3>
+                <div class="loader"></div>
+                <p id="ai-decision-text" class="decision-text"></p>
+            </div>
+        </div>
+
+    </main>
+
+    <script type="module" src="game.js"></script>
+</body>
+</html>
