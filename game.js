@@ -256,23 +256,22 @@ async function checkDeployFull() {
 async function resolveBattle(pArrangement) {
     UI.setAIStatus('决斗开始！');
     
-    // 1. 【核心】AI 部署逻辑：计算最优和次优布阵
-    const pArr_Likely = AI.optimizeHand(State.pHand, State.rule);
-    const [bestArr, secondBestArr] = AI.getDeploymentExploit(State.aiHand, pArr_Likely, State.rule);
+    // 1. 【作弊判定】：AI 是否启用全知模式
+    const pArr_Likely = AI.optimizeHand(State.pHand, State.rule); // 玩家的预测布阵
     
-    // 2. 作弊判定 (AI Cheating Logic)
     let isCheating = (State.aiHP < 50 && State.heat >= 2) && Math.random() < 0.3; // 30%几率作弊
     let pArrForAI = isCheating ? pArrangement : pArr_Likely; // AI 最终用于计算的玩家布阵
 
     if (isCheating) {
          await UI.notify('❗ AI 启用全知模式 ❗', 2500, 'red');
     }
-    
-    // 3. 战略欺骗：15% 几率选择次优解进行迷惑
+
+    // 2. AI 部署：基于 pArrForAI 计算
+    const [bestArr, secondBestArr] = AI.getDeploymentExploit(State.aiHand, pArrForAI, State.rule);
     const isBluffing = Math.random() < 0.15;
     const aiArrangement = isBluffing ? secondBestArr : bestArr; 
     
-    // 渲染 AI 槽位 (此处才真正揭晓 AI 的布阵)
+    // 渲染 AI 槽位
     for (let i = 0; i < 3; i++) {
         const lane = document.getElementById(`lane-${i}`);
         const aiSlot = lane.querySelector('.ai-slot');
@@ -361,8 +360,9 @@ async function resolveBattle(pArrangement) {
     
     // 4. 应用 JACKPOT 和惩罚
     if (isDraw) {
-        State.jackpot += baseDamage;
-        await UI.notify('平局！伤害存入奖池', 2000, 'white');
+        // 【修复 Jackpot】：平局固定累积 10 点
+        State.jackpot += 10; 
+        await UI.notify('平局！伤害存入奖池 (+10)', 2000, 'white');
     } 
     else {
         const finalDamage = baseDamage + State.jackpot;

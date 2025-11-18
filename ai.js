@@ -37,13 +37,13 @@ function minimax(pool, aiHand, pHand, isAiTurn, alpha, beta, jackpot, heat) {
     }
 }
 
-// 终局估值函数 (核心：AI现在知道 Jackpot 和 Heat)
+// 终局估值函数 (Minimax 评估)
 function evaluateFinalState(judgeCard, aiHand, pHand) {
     const rule = Core.getJudgeRule(judgeCard);
     
     // AI 部署：使用最强的攻击性策略
     const pArr_Likely = optimizeHand(pHand, rule); 
-    const aiArr = getDeploymentExploit(aiHand, pArr_Likely, rule)[0]; // 取最优布阵
+    const aiArr = getDeploymentExploit(aiHand, pArr_Likely, rule)[0]; 
     
     // 基础伤害计算
     const pTotal = Core.calculateMixedSum([], pArr_Likely, rule);
@@ -58,8 +58,8 @@ function evaluateFinalState(judgeCard, aiHand, pHand) {
         if (winner === 'PLAYER') pWins++; else if (winner === 'AI') aWins++;
     }
     
-    let isDraw = false; let winner = null;
-    if (pWins >= 2) winner = 'PLAYER'; else if (aWins >= 2) winner = 'AI'; else isDraw = true;
+    let winner = null;
+    if (pWins >= 2) winner = 'PLAYER'; else if (aWins >= 2) winner = 'AI';
 
     // 终局倍率和伤害
     if ((winner === 'PLAYER' && pWins === 3) || (winner === 'AI' && aWins === 3)) rawDamage *= 2;
@@ -71,7 +71,7 @@ function evaluateFinalState(judgeCard, aiHand, pHand) {
 }
 
 
-// 基础最优布阵 (用于预测玩家)
+// 基础最优布阵 (用于预测玩家 / 消除智障行为)
 export function optimizeHand(hand, rule) {
     if (hand.length < 3) return hand;
 
@@ -83,11 +83,22 @@ export function optimizeHand(hand, rule) {
     for (let perm of perms) {
         let currentScore = 0;
         for (let i = 0; i < 3; i++) {
-            const val = Core.getCardPoint(perm[i], modes[i]);
-            if (modes[i] === 'HIGH') currentScore += val; 
-            else currentScore += (15 - val);
+            const cardValue = perm[i];
+            const mode = modes[i];
+            
+            // 评分逻辑：明确根据模式目标赋值，确保大牌进 HIGH，小牌进 LOW
+            if (mode === 'HIGH') {
+                // HIGH 模式：Ace=14, K=13. 分数等于有效点数。
+                currentScore += Core.getCardPoint(cardValue, 'HIGH'); 
+            } else { 
+                // LOW 模式：Ace=1, 2=2. 分数通过 (15 - 有效点数) 转换，确保小点数获得高分。
+                currentScore += (15 - Core.getCardPoint(cardValue, 'LOW')); 
+            }
         }
-        if (currentScore > bestScore) { bestScore = currentScore; bestPerm = perm; }
+        if (currentScore > bestScore) { 
+            bestScore = currentScore; 
+            bestPerm = perm; 
+        }
     }
     return bestPerm;
 }
