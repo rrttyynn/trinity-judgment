@@ -1,4 +1,4 @@
-// core.js v7.2 (Final Core with Ace Lockdown)
+// core.js v8.0 (Additive Damage & Final Rules)
 
 export function createDeck() {
     let deck = [];
@@ -63,6 +63,7 @@ export function compareLane(pCard, aCard, mode) {
     return 'DRAW';
 }
 
+// 总点数差计算 (用于伤害公式的第一部分)
 export function calculateDamageDifference(pArr, aArr, rule) {
     const modes = getLaneModes(rule);
     let pSum = 0;
@@ -75,6 +76,7 @@ export function calculateDamageDifference(pArr, aArr, rule) {
     return Math.abs(pSum - aSum);
 }
 
+// 混合点数计算 (用于仪表盘)
 export function calculateMixedSum(handArr, slotArr, rule) {
     let sum = 0;
     if (handArr && handArr.length > 0) {

@@ -34,7 +34,6 @@ function updateGameState() {
     UI.updateEnvironment(State.heat, State.jackpot);
 }
 
-// 【修复】仪表盘伤害计算，确保显示乘热度后的预测值
 function updateRealTimeDashboard() {
     let pSum = 0;
     let aSum = 0;
@@ -61,9 +60,10 @@ function updateRealTimeDashboard() {
         rate = Core.getJudgeMultiplier(State.judgeCard);
         pSum = Core.calculateMixedSum(remainingHand, slots, State.rule);
         
-        // 【UI FIX】显示完整的倍率伤害预测
+        // 【UI Fix】显示加法伤害预测 (分差 + 倍率*热度)
         const damageDifference = Math.abs(pSum - aSum);
-        const projectedDamage = damageDifference * rate * State.heat;
+        const multiplierComponent = rate * State.heat;
+        const projectedDamage = damageDifference + multiplierComponent;
         
         dmg = `${projectedDamage}`;
         rate = `${rate}x${State.heat}`;
@@ -260,13 +260,10 @@ async function checkDeployFull() {
 async function resolveBattle(pArrangement) {
     UI.setAIStatus('决斗开始！');
     
-    // 1. 【AI 作弊部署】: 获取 AI 的最优布阵
+    // 1. AI 部署
     const pArr_Likely = AI.optimizeHand(State.pHand, State.rule); 
+    const [bestArr, secondBestArr] = AI.getDeploymentExploit(State.aiHand, pArrangement, State.rule);
     
-    // AI 此时是全知模式，直接使用玩家的实际布阵进行计算
-    let pArrForAI = pArrangement; 
-
-    const [bestArr, secondBestArr] = AI.getDeploymentExploit(State.aiHand, pArrForAI, State.rule);
     const isBluffing = Math.random() < 0.15;
     const aiArrangement = isBluffing ? secondBestArr : bestArr; 
     
@@ -344,7 +341,9 @@ async function resolveBattle(pArrangement) {
     }
 
     // 3. 最终结算
-    let baseDamage = damageDifference * multiplier * State.heat;
+    const baseDamageRaw = damageDifference * multiplier; // Raw damage base (used for jackpot)
+    let baseDamageWithHeat = baseDamageRaw * State.heat;
+
     let isDraw = false;
     let winner = null;
     if (pWins >= 2) winner = 'PLAYER';
@@ -353,17 +352,18 @@ async function resolveBattle(pArrangement) {
 
     // 完胜翻倍
     if ((winner === 'PLAYER' && pWins === 3) || (winner === 'AI' && aWins === 3)) {
-         baseDamage *= 2;
+         baseDamageWithHeat *= 2;
          await UI.notify('⚡ 三相碾压！伤害翻倍！⚡', 2000, '#ffd700');
     }
     
     // 4. 应用 JACKPOT 和惩罚
     if (isDraw) {
+        // Jackpot 固定累积 10
         State.jackpot += 10; 
         await UI.notify('平局！伤害存入奖池 (+10)', 2000, 'white');
     } 
     else {
-        const finalDamage = baseDamage + State.jackpot;
+        const finalDamage = baseDamageWithHeat + State.jackpot;
         
         if (winner === 'PLAYER') {
             await UI.notify(`胜利！造成 ${finalDamage}`, 2000, '#00f3ff');
