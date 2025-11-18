@@ -1,3 +1,5 @@
+// game.js v7.2 (Final Logic)
+
 import * as Core from './core.js';
 import * as AI from './ai.js';
 import * as UI from './ui.js';
@@ -41,7 +43,8 @@ function updateRealTimeDashboard() {
     let dmg = '0';
 
     if (State.phase === 'DEPLOY' || State.phase === 'BATTLE') {
-        const aiArr = AI.optimizeHand(State.aiHand, State.rule);
+        // AI 仪表盘点数显示的是其“贪婪”布阵下的最大点数
+        const aiArr = AI.optimizeHand(State.aiHand, State.rule); 
         aSum = Core.calculateMixedSum([], aiArr, State.rule);
     } else {
         aSum = Core.calculateMixedSum(State.aiHand, [], null);
@@ -60,8 +63,9 @@ function updateRealTimeDashboard() {
         rate = Core.getJudgeMultiplier(State.judgeCard);
         pSum = Core.calculateMixedSum(remainingHand, slots, State.rule);
         
-        const baseDmg = Math.abs(pSum - aSum) * rate * State.heat;
-        dmg = `${baseDmg}`;
+        // 伤害预测基于总点数差
+        const damageDifference = Math.abs(pSum - aSum);
+        dmg = `${damageDifference}`;
         rate = `${rate}x${State.heat}`;
     } else {
         pSum = Core.calculateMixedSum(State.pHand, [], null);
@@ -102,7 +106,7 @@ async function startRound() {
         const action = AI.getDebtAction(State.aiHP, State.aiDebt, State.heat); 
         await UI.showAIDecision(action); 
         if (action === 'PAY') {
-            const cost = Math.floor(State.aiDebt / 2);
+            const cost = Math.floor(State.aiDebt * 0.3);
             State.aiHP -= cost;
             State.aiDebt = 0;
             UI.notify(`AI 支付了 ${cost} 生命值`, 1000, 'orange');
@@ -127,12 +131,12 @@ async function startRound() {
 }
 
 window.payDebt = async () => {
-    const cost = Math.floor(State.pDebt / 2);
+    const cost = Math.floor(State.pDebt * 0.3);
     State.playerHP -= cost;
     State.pDebt = 0;
     updateGameState();
     UI.showDebtOptions(false);
-    await UI.notify(`已认罪。扣除 ${cost}`, 1000, 'orange');
+    await UI.notify(`已认罪。扣除 ${cost} (30% cost)`, 1000, 'orange');
     proceedToDraft();
 };
 
@@ -164,7 +168,7 @@ async function triggerAiDraft() {
     UI.setAIStatus('AI 正在选牌...');
     UI.renderDraftPool(State.pool, null);
     await UI.sleep(500); 
-    const aiPick = AI.getBestDraft(State.pool, State.aiHand, State.pHand);
+    const aiPick = AI.getBestDraft(State.pool, State.aiHand, State.pHand, State.jackpot, State.heat);
     const aIdx = State.pool.indexOf(aiPick);
     if (aIdx > -1) {
         State.aiHand.push(aiPick);
@@ -209,6 +213,15 @@ async function endDraftPhase() {
 
 async function proceedToDeploy() {
     State.phase = 'DEPLOY';
+    // AI 部署时，使用它的 Exploitative Deployment 来决定明牌
+    const aiArrangement = AI.getDeploymentExploit(State.aiHand, AI.optimizeHand(State.pHand, State.rule), State.rule);
+    for (let i = 0; i < 3; i++) {
+        const lane = document.getElementById(`lane-${i}`);
+        const aiSlot = lane.querySelector('.ai-slot');
+        aiSlot.innerHTML = '';
+        // AI 部署时，立即显示它的攻击性布阵
+        aiSlot.appendChild(UI.createCardElement(aiArrangement[i], 'ai')); 
+    }
     UI.setAIStatus('AI 已明牌');
     updateRealTimeDashboard(); 
     const pZone = document.getElementById('player-hand-zone');
@@ -255,78 +268,108 @@ async function checkDeployFull() {
 async function resolveBattle(pArrangement) {
     UI.setAIStatus('决斗开始！');
     
-    const aiArrangement = AI.optimizeHand(State.aiHand, State.rule);
-    for (let i = 0; i < 3; i++) {
-        const lane = document.getElementById(`lane-${i}`);
-        const aiSlot = lane.querySelector('.ai-slot');
-        aiSlot.innerHTML = '';
-        aiSlot.appendChild(UI.createCardElement(aiArrangement[i], 'ai'));
-    }
-    
-    await UI.sleep(1000);
+    // AI 实际部署
+    const pArr_Likely = AI.optimizeHand(State.pHand, State.rule);
+    const aiArrangement = AI.getDeploymentExploit(State.aiHand, pArr_Likely, State.rule);
+    // AI 牌已经明牌，此处不需要再渲染
+
+    await UI.sleep(800);
     
     let pWins = 0;
     let aWins = 0;
     const modes = Core.getLaneModes(State.rule);
-    
+    const multiplier = Core.getJudgeMultiplier(State.judgeCard);
+
+    // 1. 获取总点数，用于伤害计算
     const pTotal = Core.calculateMixedSum([], pArrangement, State.rule);
     const aTotal = Core.calculateMixedSum([], aiArrangement, State.rule);
+    const damageDifference = Math.abs(pTotal - aTotal); // 伤害差值基础
     
-    const multiplier = Core.getJudgeMultiplier(State.judgeCard);
-    let baseDamage = Math.abs(pTotal - aTotal) * multiplier * State.heat;
-    
+    // 2. 逐路判定 (演出)
     for (let i = 0; i < 3; i++) {
         const lane = document.getElementById(`lane-${i}`);
         const indicator = lane.querySelector('.rule-indicator');
-        indicator.innerText = modes[i] === 'HIGH' ? '>' : '<';
+        
+        const pCard = pArrangement[i];
+        const aCard = aiArrangement[i];
+        const mode = modes[i];
+        
+        // 1. 获取有效牌值
+        const pValEff = Core.getCardPoint(pCard, mode);
+        const aValEff = Core.getCardPoint(aCard, mode);
+        
+        const winner = Core.compareLane(pCard, aCard, mode);
+        
+        // 2. 视觉演出 (规则)
+        indicator.innerText = modes[i] === 'HIGH' ? 'HIGH' : 'LOW';
         indicator.style.color = 'white';
-        await UI.sleep(1000);
-        const winner = Core.compareLane(pArrangement[i], aiArrangement[i], modes[i]);
+        await UI.sleep(1500); 
+
+        // 3. 统计胜场 & 提示
+        let winMessage = '';
         if (winner === 'PLAYER') {
             pWins++;
             lane.style.borderColor = '#00f3ff';
             lane.style.boxShadow = '0 0 20px #00f3ff';
+            indicator.innerText = 'WIN'; 
+            winMessage = `Player Wins Lane ${i+1}! (${pValEff} vs ${aValEff})`;
         } else if (winner === 'AI') {
             aWins++;
             lane.style.borderColor = '#ff2a6d';
             lane.style.boxShadow = '0 0 20px #ff2a6d';
+            indicator.innerText = 'WIN';
+            winMessage = `AI Wins Lane ${i+1}! (${pValEff} vs ${aValEff})`;
         } else {
             lane.style.borderColor = '#ffd700';
+            indicator.innerText = `DRAW`; 
+            
+            const isAceLocked = (Core.getCardPoint(pCard) === 1 && Core.getCardPoint(aCard) >= 11) || 
+                                (Core.getCardPoint(aCard) === 1 && Core.getCardPoint(pCard) >= 11);
+
+            if (isAceLocked) {
+                 winMessage = `Lane ${i+1}: Ace Lockdown! (DRAW)`;
+                 indicator.innerText = 'LOCK';
+                 indicator.style.color = 'red';
+            } else {
+                 winMessage = `Lane ${i+1}: Draw (${pValEff} vs ${aValEff})`;
+            }
         }
+        
+        await UI.notify(winMessage, 1000, winner === 'PLAYER' ? '#00f3ff' : (winner === 'AI' ? '#ff2a6d' : '#ffd700'));
+        
+        // 4. 更新总分 (实时)
+        UI.updateDashboard(pTotal, aTotal, multiplier + "x" + State.heat, damageDifference + State.jackpot);
+        await UI.sleep(500); 
     }
 
-    // 完胜翻倍
-    if ((pWins === 3) || (aWins === 3)) {
-        baseDamage *= 2;
-        await UI.notify('⚡ 三相碾压！伤害翻倍！⚡', 2000, '#ffd700');
-    }
-
+    // 3. 最终结算
+    let baseDamage = damageDifference * multiplier * State.heat;
     let isDraw = false;
     let winner = null;
     if (pWins >= 2) winner = 'PLAYER';
     else if (aWins >= 2) winner = 'AI';
     else isDraw = true;
 
+    // 完胜翻倍
+    if ((winner === 'PLAYER' && pWins === 3) || (winner === 'AI' && aWins === 3)) {
+         baseDamage *= 2;
+         await UI.notify('⚡ 三相碾压！伤害翻倍！⚡', 2000, '#ffd700');
+    }
+    
+    // 4. 应用 JACKPOT 和惩罚
     if (isDraw) {
         State.jackpot += baseDamage;
-        updateRealTimeDashboard(baseDamage);
         await UI.notify('平局！伤害存入奖池', 2000, 'white');
     } 
     else {
         const finalDamage = baseDamage + State.jackpot;
-        updateRealTimeDashboard(finalDamage);
-
+        
         if (winner === 'PLAYER') {
             await UI.notify(`胜利！造成 ${finalDamage}`, 2000, '#00f3ff');
             
             let damageToAI = finalDamage;
-            
-            // 【修正】AI 极限加注失败惩罚
             if (State.aiDoubling && State.aiDebt > 100) {
-                 const debtPenalty = State.aiDebt;
-                 const roundPenalty = Math.floor(finalDamage * 1.5);
-                 const totalPenalty = debtPenalty + roundPenalty;
-                 
+                 const totalPenalty = State.aiDebt + Math.floor(finalDamage * 1.5);
                  await UI.notify(`AI 极限失败：清算总额 ${totalPenalty} HP！`, 1500, 'red');
                  State.aiHP -= totalPenalty; 
                  State.aiDebt = 0; 
@@ -345,12 +388,8 @@ async function resolveBattle(pArrangement) {
             
             let damageToPlayer = finalDamage;
 
-            // 【修正】玩家极限加注失败惩罚
             if (State.pDoubling && State.pDebt > 100) {
-                const debtPenalty = State.pDebt;
-                const roundPenalty = Math.floor(finalDamage * 1.5);
-                const totalPenalty = debtPenalty + roundPenalty;
-                
+                const totalPenalty = State.pDebt + Math.floor(finalDamage * 1.5);
                 await UI.notify(`极限失败：清算总额 ${totalPenalty} HP！`, 1500, 'red');
                 State.playerHP -= totalPenalty; 
                 State.pDebt = 0; 
@@ -367,7 +406,7 @@ async function resolveBattle(pArrangement) {
     
     updateGameState();
     
-    // 检查死亡 (仅检查 HP)
+    // 检查死亡
     if (State.playerHP <= 0) { UI.notify('GAME OVER', 99999, 'red'); return; }
     if (State.aiHP <= 0) { UI.notify('VICTORY', 99999, 'gold'); return; }
     
