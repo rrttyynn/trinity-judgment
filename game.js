@@ -34,6 +34,7 @@ function updateGameState() {
     UI.updateEnvironment(State.heat, State.jackpot);
 }
 
+// 【修复】仪表盘伤害计算，确保显示乘热度后的预测值
 function updateRealTimeDashboard() {
     let pSum = 0;
     let aSum = 0;
@@ -60,8 +61,11 @@ function updateRealTimeDashboard() {
         rate = Core.getJudgeMultiplier(State.judgeCard);
         pSum = Core.calculateMixedSum(remainingHand, slots, State.rule);
         
+        // 【UI FIX】显示完整的倍率伤害预测
         const damageDifference = Math.abs(pSum - aSum);
-        dmg = `${damageDifference}`;
+        const projectedDamage = damageDifference * rate * State.heat;
+        
+        dmg = `${projectedDamage}`;
         rate = `${rate}x${State.heat}`;
     } else {
         pSum = Core.calculateMixedSum(State.pHand, [], null);
@@ -256,17 +260,12 @@ async function checkDeployFull() {
 async function resolveBattle(pArrangement) {
     UI.setAIStatus('决斗开始！');
     
-    // 1. 【作弊判定】：AI 是否启用全知模式
-    const pArr_Likely = AI.optimizeHand(State.pHand, State.rule); // 玩家的预测布阵
+    // 1. 【AI 作弊部署】: 获取 AI 的最优布阵
+    const pArr_Likely = AI.optimizeHand(State.pHand, State.rule); 
     
-    let isCheating = (State.aiHP < 50 && State.heat >= 2) && Math.random() < 0.3; // 30%几率作弊
-    let pArrForAI = isCheating ? pArrangement : pArr_Likely; // AI 最终用于计算的玩家布阵
+    // AI 此时是全知模式，直接使用玩家的实际布阵进行计算
+    let pArrForAI = pArrangement; 
 
-    if (isCheating) {
-         await UI.notify('❗ AI 启用全知模式 ❗', 2500, 'red');
-    }
-
-    // 2. AI 部署：基于 pArrForAI 计算
     const [bestArr, secondBestArr] = AI.getDeploymentExploit(State.aiHand, pArrForAI, State.rule);
     const isBluffing = Math.random() < 0.15;
     const aiArrangement = isBluffing ? secondBestArr : bestArr; 
@@ -360,7 +359,6 @@ async function resolveBattle(pArrangement) {
     
     // 4. 应用 JACKPOT 和惩罚
     if (isDraw) {
-        // 【修复 Jackpot】：平局固定累积 10 点
         State.jackpot += 10; 
         await UI.notify('平局！伤害存入奖池 (+10)', 2000, 'white');
     } 
