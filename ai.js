@@ -35,9 +35,9 @@ function minimax(pool, aiHand, pHand, isAiTurn, alpha, beta, jackpot, heat) {
         let bestMove = null;
         for (let card of pool) {
             let cardBonus = 0;
-            // 【绝对牌权奖励】：争夺当前牌池中的最高/最低牌
+            // 【绝对牌权奖励】：AI 必须优先争夺当前牌池中的最高/最低牌 (权重 +50)
             if (card === poolMax || card === poolMin) {
-                cardBonus = 20; // 巨额奖励，使其成为主要目标
+                cardBonus = 50; 
             }
             
             const evalObj = minimax(pool.filter(c => c !== card), [...aiHand, card], pHand, false, alpha, beta, jackpot, heat);
@@ -54,9 +54,9 @@ function minimax(pool, aiHand, pHand, isAiTurn, alpha, beta, jackpot, heat) {
         let bestMove = null;
         for (let card of pool) {
             let cardPenalty = 0;
-            // 【绝对牌权惩罚】：让玩家抢走最高/最低牌
+            // 【绝对牌权惩罚】：让玩家抢走最高/最低牌 (权重 -50)
             if (card === poolMax || card === poolMin) {
-                cardPenalty = -20; // 巨额惩罚
+                cardPenalty = -50; 
             }
 
             const evalObj = minimax(pool.filter(c => c !== card), aiHand, [...pHand, card], true, alpha, beta, jackpot, heat);

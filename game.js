@@ -60,7 +60,7 @@ function updateRealTimeDashboard() {
         rate = Core.getJudgeMultiplier(State.judgeCard);
         pSum = Core.calculateMixedSum(remainingHand, slots, State.rule);
         
-        // 【UI Fix】显示加法伤害预测 (分差 + 倍率*热度)
+        // 【UI Fix】：显示最终加法伤害预测 
         const damageDifference = Math.abs(pSum - aSum);
         const multiplierComponent = rate * State.heat;
         const projectedDamage = damageDifference + multiplierComponent;
@@ -91,8 +91,9 @@ async function startRound() {
     UI.clearBattlefield();
     State.pHand = [];
     State.aiHand = [];
-    State.pDoubling = false;
-    State.aiDoubling = false;
+    // Doubling states must be reset only AFTER debt phase resolves
+    // State.pDoubling = false; // Moved to debt resolution end
+    // State.aiDoubling = false; // Moved to debt resolution end
     State.forcedSettle = false; 
     State.firstMover = State.round % 2 !== 0 ? 'PLAYER' : 'AI';
     
@@ -116,7 +117,7 @@ async function startRound() {
         }
         updateGameState();
     }
-
+    
     // 玩家死缓处理
     if (State.pDebt > 0) {
         State.phase = 'DEBT';
@@ -128,6 +129,9 @@ async function startRound() {
         UI.showDebtOptions(true);
         return; 
     }
+    // 只有在无死缓时才进行重置
+    State.pDoubling = false;
+    State.aiDoubling = false;
     proceedToDraft();
 }
 
@@ -135,6 +139,7 @@ window.payDebt = async () => {
     const cost = Math.floor(State.pDebt * 0.3);
     State.playerHP -= cost;
     State.pDebt = 0;
+    State.pDoubling = false; // 【BUG FIX】：认罪后重置加注状态
     updateGameState();
     UI.showDebtOptions(false);
     await UI.notify(`已认罪。扣除 ${cost} (30% cost)`, 1000, 'orange');
@@ -335,7 +340,8 @@ async function resolveBattle(pArrangement) {
         }
         
         // 4. 更新总分 (实时)
-        UI.updateDashboard(pTotal, aTotal, multiplier + "x" + State.heat, damageDifference + multiplier * State.heat + State.jackpot);
+        const currentTotalDamage = damageDifference + (multiplier * State.heat) + State.jackpot;
+        UI.updateDashboard(pTotal, aTotal, multiplier + "x" + State.heat, currentTotalDamage);
         await UI.sleep(500); 
     }
 
@@ -381,7 +387,10 @@ async function resolveBattle(pArrangement) {
                 State.aiDebt += damageToAI;
             }
 
-            if (State.pDebt > 0) State.pDebt = 0;
+            // 【BUG FIX】：玩家胜利，清空负债和加注状态
+            State.pDebt = 0;
+            State.pDoubling = false;
+            State.aiDoubling = false; // AI doubling must be cleared too
         } 
         else { // AI WIN - 玩家失败
             await UI.notify(`失败... 承受 ${finalDamage}`, 2000, '#ff2a6d');
@@ -395,11 +404,18 @@ async function resolveBattle(pArrangement) {
                 State.pDebt = 0; 
             } 
             else {
+                // 累积新负债
                 State.pDebt += damageToPlayer;
-                if (State.pDoubling) State.pDebt = Math.floor(damageToPlayer * 1.5);
+                // 如果是加注状态，负债按 1.5x 累积
+                if (State.pDoubling) State.pDebt += Math.floor(damageToPlayer * 0.5); 
             }
             
-            if (State.aiDebt > 0) State.aiDebt = 0;
+            // 【BUG FIX】：玩家失败，清空 AI 负债和加注状态
+            State.aiDebt = 0;
+            State.aiDoubling = false;
+            
+            // 【BUG FIX】：无论是否进入高风险清算，玩家加注状态都必须重置
+            State.pDoubling = false;
         }
         State.jackpot = 0;
     }
