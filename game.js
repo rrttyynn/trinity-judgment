@@ -1,5 +1,3 @@
-// game.js v7.2 (Final Logic)
-
 import * as Core from './core.js';
 import * as AI from './ai.js';
 import * as UI from './ui.js';
@@ -43,8 +41,7 @@ function updateRealTimeDashboard() {
     let dmg = '0';
 
     if (State.phase === 'DEPLOY' || State.phase === 'BATTLE') {
-        // AI 仪表盘点数显示的是其“贪婪”布阵下的最大点数
-        const aiArr = AI.optimizeHand(State.aiHand, State.rule); 
+        const aiArr = AI.optimizeHand(State.aiHand, State.rule);
         aSum = Core.calculateMixedSum([], aiArr, State.rule);
     } else {
         aSum = Core.calculateMixedSum(State.aiHand, [], null);
@@ -63,7 +60,6 @@ function updateRealTimeDashboard() {
         rate = Core.getJudgeMultiplier(State.judgeCard);
         pSum = Core.calculateMixedSum(remainingHand, slots, State.rule);
         
-        // 伤害预测基于总点数差
         const damageDifference = Math.abs(pSum - aSum);
         dmg = `${damageDifference}`;
         rate = `${rate}x${State.heat}`;
@@ -213,16 +209,8 @@ async function endDraftPhase() {
 
 async function proceedToDeploy() {
     State.phase = 'DEPLOY';
-    // AI 部署时，使用它的 Exploitative Deployment 来决定明牌
-    const aiArrangement = AI.getDeploymentExploit(State.aiHand, AI.optimizeHand(State.pHand, State.rule), State.rule);
-    for (let i = 0; i < 3; i++) {
-        const lane = document.getElementById(`lane-${i}`);
-        const aiSlot = lane.querySelector('.ai-slot');
-        aiSlot.innerHTML = '';
-        // AI 部署时，立即显示它的攻击性布阵
-        aiSlot.appendChild(UI.createCardElement(aiArrangement[i], 'ai')); 
-    }
-    UI.setAIStatus('AI 已明牌');
+    // AI 状态改为“正在布阵/准备中”，而不是“已明牌”
+    UI.setAIStatus('AI 准备布阵...');
     updateRealTimeDashboard(); 
     const pZone = document.getElementById('player-hand-zone');
     pZone.innerHTML = ''; 
@@ -261,18 +249,25 @@ async function checkDeployFull() {
     if (slots[0] && slots[1] && slots[2]) {
         updateRealTimeDashboard("CALCULATING..."); 
         await UI.sleep(500);
-        resolveBattle(slots);
+        resolveBattle(slots); // 玩家放完牌，立刻进入结算，AI 布阵就在这里揭晓
     }
 }
 
 async function resolveBattle(pArrangement) {
     UI.setAIStatus('决斗开始！');
     
-    // AI 实际部署
+    // 【核心修复】AI 布阵在此刻揭晓
     const pArr_Likely = AI.optimizeHand(State.pHand, State.rule);
     const aiArrangement = AI.getDeploymentExploit(State.aiHand, pArr_Likely, State.rule);
-    // AI 牌已经明牌，此处不需要再渲染
-
+    
+    // 渲染 AI 槽位
+    for (let i = 0; i < 3; i++) {
+        const lane = document.getElementById(`lane-${i}`);
+        const aiSlot = lane.querySelector('.ai-slot');
+        aiSlot.innerHTML = '';
+        aiSlot.appendChild(UI.createCardElement(aiArrangement[i], 'ai'));
+    }
+    
     await UI.sleep(800);
     
     let pWins = 0;
@@ -283,7 +278,7 @@ async function resolveBattle(pArrangement) {
     // 1. 获取总点数，用于伤害计算
     const pTotal = Core.calculateMixedSum([], pArrangement, State.rule);
     const aTotal = Core.calculateMixedSum([], aiArrangement, State.rule);
-    const damageDifference = Math.abs(pTotal - aTotal); // 伤害差值基础
+    const damageDifference = Math.abs(pTotal - aTotal); 
     
     // 2. 逐路判定 (演出)
     for (let i = 0; i < 3; i++) {
@@ -294,48 +289,44 @@ async function resolveBattle(pArrangement) {
         const aCard = aiArrangement[i];
         const mode = modes[i];
         
-        // 1. 获取有效牌值
         const pValEff = Core.getCardPoint(pCard, mode);
         const aValEff = Core.getCardPoint(aCard, mode);
         
         const winner = Core.compareLane(pCard, aCard, mode);
         
-        // 2. 视觉演出 (规则)
+        // 视觉演出 (规则)
         indicator.innerText = modes[i] === 'HIGH' ? 'HIGH' : 'LOW';
         indicator.style.color = 'white';
         await UI.sleep(1500); 
 
-        // 3. 统计胜场 & 提示
-        let winMessage = '';
+        // 累计胜场 & 提示
         if (winner === 'PLAYER') {
             pWins++;
             lane.style.borderColor = '#00f3ff';
             lane.style.boxShadow = '0 0 20px #00f3ff';
             indicator.innerText = 'WIN'; 
-            winMessage = `Player Wins Lane ${i+1}! (${pValEff} vs ${aValEff})`;
+            await UI.notify(`Player Wins Lane ${i+1}! (${pValEff} vs ${aValEff})`, 1000, '#00f3ff');
         } else if (winner === 'AI') {
             aWins++;
             lane.style.borderColor = '#ff2a6d';
             lane.style.boxShadow = '0 0 20px #ff2a6d';
             indicator.innerText = 'WIN';
-            winMessage = `AI Wins Lane ${i+1}! (${pValEff} vs ${aValEff})`;
+            await UI.notify(`AI Wins Lane ${i+1}! (${pValEff} vs ${aValEff})`, 1000, '#ff2a6d');
         } else {
             lane.style.borderColor = '#ffd700';
-            indicator.innerText = `DRAW`; 
             
             const isAceLocked = (Core.getCardPoint(pCard) === 1 && Core.getCardPoint(aCard) >= 11) || 
                                 (Core.getCardPoint(aCard) === 1 && Core.getCardPoint(pCard) >= 11);
 
             if (isAceLocked) {
-                 winMessage = `Lane ${i+1}: Ace Lockdown! (DRAW)`;
+                 await UI.notify(`Lane ${i+1}: Ace Lockdown! (DRAW)`, 1000, 'red');
                  indicator.innerText = 'LOCK';
                  indicator.style.color = 'red';
             } else {
-                 winMessage = `Lane ${i+1}: Draw (${pValEff} vs ${aValEff})`;
+                 await UI.notify(`Lane ${i+1}: Draw (${pValEff} vs ${aValEff})`, 1000, '#ffd700');
+                 indicator.innerText = `DRAW`;
             }
         }
-        
-        await UI.notify(winMessage, 1000, winner === 'PLAYER' ? '#00f3ff' : (winner === 'AI' ? '#ff2a6d' : '#ffd700'));
         
         // 4. 更新总分 (实时)
         UI.updateDashboard(pTotal, aTotal, multiplier + "x" + State.heat, damageDifference + State.jackpot);
